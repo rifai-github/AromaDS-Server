@@ -168,9 +168,10 @@ class JobScheduleController extends Controller
             // Show one representative per generated visit. Once Material Assign has created
             // a job_number, keep each job_number separated so old/new material batches do
             // not share rooms or status badges in the dashboard.
-            $query->where(function ($q) {
+            $groupByServiceSeries = \Illuminate\Support\Facades\Schema::hasColumn((new \App\Models\JobSchedule)->getTable(), 'service_interval_days');
+            $query->where(function ($q) use ($groupByServiceSeries) {
                 $table = (new \App\Models\JobSchedule)->getTable();
-                $q->whereIn('id', function ($sub) use ($table) {
+                $q->whereIn('id', function ($sub) use ($table, $groupByServiceSeries) {
                     $sub->selectRaw('MIN(id)')
                         ->from($table)
                         ->whereNotNull('job_advice_id')
@@ -180,6 +181,13 @@ class JobScheduleController extends Controller
                         // digabung dengan CSR ruangan lain di periode yang sama selama belum bernomor.
                         // Harus sama dengan unassignedServiceFlowMarker().
                         ->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') AND LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(material_checked, 0) = 1 THEN 1 ELSE 0 END");
+
+                    // QA batch 4 (27 Nov 2026): seri service rental 2-bulanan dan bulanan di ruangan
+                    // yang sama punya nomor periode yang sama untuk bulan yang berbeda — jangan
+                    // digabung selama belum bernomor. Harus sama dengan JobSchedule::serviceSeriesMarker().
+                    if ($groupByServiceSeries) {
+                        $sub->groupByRaw("CASE WHEN (job_number IS NULL OR job_number = '') THEN (".\App\Models\JobSchedule::serviceSeriesGroupingSql().') ELSE 0 END');
+                    }
                 })
                 ->orWhereNull('job_advice_id');
             });
@@ -588,7 +596,12 @@ class JobScheduleController extends Controller
         if ($viewMode === 'room') {
              $query->orderBy('created_at', 'desc');
         } else {
-             $query->with(['jobAssignSchedules.team'])->orderBy('created_at', 'desc');
+             // QA batch 4 (27 Nov 2026): baris yang dibuat sekaligus (seri service beberapa rental)
+             // diurutkan per tanggal jadwal, supaya bulan yang sama berdampingan.
+             $query->with(['jobAssignSchedules.team'])
+                ->orderBy('created_at', 'desc')
+                ->orderBy('schedule_date')
+                ->orderBy('id');
         }
         
         $jobSchedules = $query->paginateStd(25);
@@ -742,7 +755,7 @@ class JobScheduleController extends Controller
             $job->building_id ?? 'no-building',
             $job->type ?? 'no-type',
             $job->period ?? 'no-period',
-            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned'.$this->unassignedServiceFlowMarker($job),
+            $jobNumber !== '' ? "job:{$jobNumber}" : 'job:unassigned'.$this->unassignedServiceFlowMarker($job).$job->serviceSeriesMarker(),
         ]);
     }
 
@@ -768,6 +781,10 @@ class JobScheduleController extends Controller
      * schedule_date berbeda (tanggal service berikutnya dihitung per ruangan), dan dulu kuncinya
      * schedule_date - satu baris NEW JOB pecah jadi beberapa nomor JS setelah Material Assign.
      * Job tanpa period tetap dipisah per tanggal seperti sebelumnya.
+     *
+     * QA batch 4 (27 Nov 2026): period dihitung per seri rental. Seri 2-bulanan dan bulanan di
+     * ruangan yang sama dibedakan lewat serviceSeriesMarker() supaya "periode 2" keduanya (bulan
+     * berbeda) tidak berbagi satu nomor JS.
      */
     private function materialAssignBatchKey(JobSchedule $job): string
     {
@@ -780,7 +797,7 @@ class JobScheduleController extends Controller
             $job->building_id ?? '0',
             $job->type,
             $visit,
-        ]).$this->unassignedServiceFlowMarker($job);
+        ]).$this->unassignedServiceFlowMarker($job).$job->serviceSeriesMarker();
     }
 
     private function applyDisplayContractNumberFilter($query, string $value, string $viewMode): void
@@ -1308,8 +1325,11 @@ class JobScheduleController extends Controller
                 $siblingsQuery->whereIn('id', $request->room_ids);
             }
 
-            $siblings = $siblingsQuery->get();
-                
+            // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
+            $siblings = $siblingsQuery->get()
+                ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                ->values();
+
             $targets = $targets->merge($siblings);
             \Log::info("Unassign Team: Found " . $targets->count() . " linked jobs via Grouping (JA+Building+Type+Period)");
         }
@@ -2725,15 +2745,21 @@ class JobScheduleController extends Controller
 
             if ($jobSchedule->job_number) {
                 $siblingsQuery->where('job_number', $jobSchedule->job_number);
+                $siblingJobIds = $siblingsQuery->pluck('id')->toArray();
             } else {
                 if ($jobSchedule->period !== null) {
                     $siblingsQuery->where('period', $jobSchedule->period);
                 } else {
                     $siblingsQuery->whereNull('period');
                 }
+
+                // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
+                $siblingJobIds = $siblingsQuery->get()
+                    ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                    ->pluck('id')
+                    ->values()
+                    ->toArray();
             }
-                
-            $siblingJobIds = $siblingsQuery->pluck('id')->toArray();
         }
         
         // Get all material issues related to this job schedule (and siblings in Job View) via job assign schedules
@@ -3680,7 +3706,10 @@ class JobScheduleController extends Controller
                         $siblingsQuery->whereNull('period');
                     }
                     
-                    $siblings = $siblingsQuery->get();
+                    // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
+                    $siblings = $siblingsQuery->get()
+                        ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                        ->values();
                     // QA 26 Nov 2026: Job Check Unit Only dan CSR yang belum bernomor jangan
                     // saling ikut sebagai saudara (lihat unassignedServiceFlowMarker()).
                     if (blank($jobSchedule->job_number)) {
@@ -9729,124 +9758,84 @@ class JobScheduleController extends Controller
                 return;
             }
 
-            $serviceRental = $serviceEligibleRooms->first()?->rentalProduct;
-            $totalServices = $this->calculateTotalServicePeriodsForRental($jobAdvice, $serviceRental);
+            // QA batch 4 (27 Nov 2026, JA ADS-JA/26-11/0007 Ruang-5): satu ruangan bisa memegang
+            // beberapa rental dengan frekuensi service berbeda (TestRO2b1x 2 bulan 1x + TestVG1b1x
+            // 1 bulan 1x). Dulu hanya rental PERTAMA yang dibaca, jadi seluruh ruangan ikut ritme
+            // 2-bulanan (5 baris) dan 11 service bulanan TestVG1b1x tidak pernah dibuat. Sekarang
+            // tiap frekuensi mendapat seri job sendiri (period 2..N per seri), hanya menautkan
+            // rental miliknya. Rental berfrekuensi sama tetap satu seri seperti sebelumnya.
+            $serviceSeries = $this->groupServiceRoomsIntoFrequencySeries($serviceEligibleRooms);
+            $existingBySeries = $this->existingServicePeriodsBySeries($jobAdvice, $serviceSeries);
+            $storeSeriesInterval = \Illuminate\Support\Facades\Schema::hasColumn((new JobSchedule)->getTable(), 'service_interval_days');
+            $planned = [];
 
-            if (!$totalServices || $totalServices <= 1) {
-                // Penyebab paling sering bukan "kontraknya memang cuma 1 periode",
-                // melainkan rental tanpa service frequency — dan itu menghasilkan 0
-                // tanpa keterangan apa pun. Sebutkan penyebabnya supaya tidak terbaca
-                // sebagai "tidak ada yang perlu dibuat".
-                $reason = match (true) {
-                    ! $serviceRental => 'rental tidak terbaca dari ruangan yang selesai',
-                    ! $serviceRental->serviceFrequency => "master rental '{$serviceRental->rental_name}' (id {$serviceRental->id}) belum punya service frequency",
-                    ! $jobAdvice->contract?->start_date || ! $jobAdvice->contract?->end_date => 'kontraknya belum punya tanggal mulai/selesai',
-                    default => 'periode kontrak hanya cukup untuk satu kali service',
-                };
-
-                \Log::warning(
-                    "Tidak ada service lanjutan yang dibuat untuk {$completedFirstService->job_number}: {$reason}.",
-                    [
-                        'job_schedule_id' => $completedFirstService->id,
-                        'job_advice_id' => $jobAdvice->id,
-                        'master_rental_id' => $serviceRental?->id,
-                        'service_frequency_id' => $serviceRental?->service_frequency_id,
-                        'total_services' => $totalServices,
-                    ]
+            foreach ($serviceSeries as $seriesIndex => $series) {
+                $plan = $this->planServiceFrequencySeries(
+                    $completedFirstService,
+                    $jobAdvice,
+                    $serviceSeries,
+                    $seriesIndex,
+                    $existingBySeries[$seriesIndex] ?? ['periods' => [], 'conflicts' => []]
                 );
+                $serviceRental = $plan['rental'];
 
-                return;
-            }
+                if ($plan['skip'] === 'no_total') {
+                    // Penyebab paling sering bukan "kontraknya memang cuma 1 periode",
+                    // melainkan rental tanpa service frequency — dan itu menghasilkan 0
+                    // tanpa keterangan apa pun. Sebutkan penyebabnya supaya tidak terbaca
+                    // sebagai "tidak ada yang perlu dibuat".
+                    $reason = match (true) {
+                        ! $serviceRental => 'rental tidak terbaca dari ruangan yang selesai',
+                        ! $serviceRental->serviceFrequency => "master rental '{$serviceRental->rental_name}' (id {$serviceRental->id}) belum punya service frequency",
+                        ! $jobAdvice->contract?->start_date || ! $jobAdvice->contract?->end_date => 'kontraknya belum punya tanggal mulai/selesai',
+                        default => 'periode kontrak hanya cukup untuk satu kali service',
+                    };
 
-            // Get service frequency info. Read frequency_months / frequency_times_per_month
-            // directly from RentalServiceFrequency - do NOT re-derive from a string period
-            // type, since seeded frequency names (e.g. "Freq 1x per 3 bulan") never match the
-            // 'monthly'/'quarterly'/... keys below and silently fell back to monthly (bug: a
-            // 3-month rental generated 12 monthly services instead of 4 quarterly ones).
-            $serviceFrequencyObj = $serviceRental?->serviceFrequency;
-            $serviceFrequency = (int) ($serviceFrequencyObj?->frequency_times_per_month ?? 1);
-            $frequencyMonths = max(1, (int) ($serviceFrequencyObj?->frequency_months ?? 1));
-            // Informational only now (display/debugging) - scheduling math above uses
-            // $frequencyMonths/$serviceFrequency directly, not this string.
-            $servicePeriodType = $completedFirstService->service_period_type
-                ?? $serviceFrequencyObj?->name
-                ?? 'monthly';
+                    \Log::warning(
+                        "Tidak ada service lanjutan yang dibuat untuk {$completedFirstService->job_number}: {$reason}.",
+                        [
+                            'job_schedule_id' => $completedFirstService->id,
+                            'job_advice_id' => $jobAdvice->id,
+                            'master_rental_id' => $serviceRental?->id,
+                            'service_frequency_id' => $serviceRental?->service_frequency_id,
+                            'total_services' => $plan['total'],
+                        ]
+                    );
 
-            $serviceJobAdviceRoomIds = $serviceEligibleRooms->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
-            $servicePhysicalRoomIds = $serviceEligibleRooms
-                ->map(fn ($jaRoom) => $this->getJobAdviceRoomPhysicalRoomId($jaRoom))
-                ->filter()
-                ->map(fn ($id) => (int) $id)
-                ->unique()
-                ->values()
-                ->all();
-
-            $existingServicesCount = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                ->whereIn('type', ['service', 'service_first', 'service_routine'])
-                ->whereHas('jobScheduleRooms.rentals', function ($query) use ($serviceJobAdviceRoomIds) {
-                    $query->whereIn('job_advice_room_id', $serviceJobAdviceRoomIds);
-                })
-                ->count();
-
-            if ($existingServicesCount >= $totalServices) {
-                \Log::info("All {$totalServices} service periods already exist for service rental rows. Skipping.");
-                return;
-            }
-            
-            // Base date is the first service date
-            $baseDate = \Carbon\Carbon::parse($completedFirstService->schedule_date);
-            
-            // Build room list
-            $roomNames = $serviceEligibleRooms
-                ->pluck('room_name')
-                ->filter()
-                ->toArray();
-            $roomListNote = count($roomNames) > 0 
-                ? "\n[Rooms: " . implode(', ', $roomNames) . "]"
-                : '';
-            
-            $servicesCreated = [];
-            
-            // Determince Interval Logic
-            $frequencyTimes = is_numeric($serviceFrequency) ? (int)$serviceFrequency : 1;
-            $useDayInterval = $frequencyTimes > 1;
-            $intervalDays = 0;
-            
-            if ($useDayInterval) {
-                 // Formula: (30 days * frequency_months) / frequency_times
-                 $daysInPeriod = 30 * $frequencyMonths;
-                 $intervalDays = floor($daysInPeriod / $frequencyTimes);
-            }
-            
-            // Generate remaining services (period 2 to totalServices)
-            for ($period = 2; $period <= $totalServices; $period++) {
-                // Check if this period already exists
-                $existing = JobSchedule::where('job_advice_id', $jobAdvice->id)
-                    ->whereIn('type', ['service', 'service_first', 'service_routine'])
-                    ->where('period', $period)
-                    ->whereHas('jobScheduleRooms.rentals', function ($query) use ($serviceJobAdviceRoomIds) {
-                        $query->whereIn('job_advice_room_id', $serviceJobAdviceRoomIds);
-                    })
-                    ->first();
-                
-                if ($existing) {
                     continue;
                 }
-                
-                // Calculate service date
-                if ($useDayInterval) {
-                     // Interval based on days
-                     $serviceDate = $baseDate->copy()->addDays(($period - 1) * $intervalDays);
-                } else {
-                     // Interval based on months
-                     $serviceDate = $baseDate->copy()->addMonths(($period - 1) * $frequencyMonths);
+
+                if ($plan['skip'] === 'conflict') {
+                    // Job lama (dibuat sebelum perbaikan ini) masih menautkan rental seri ini ke
+                    // seri rental lain. Membuat seri baru di sini akan menjadwalkan rental yang
+                    // sama dua kali — rapikan dulu lewat operational:repair-multi-frequency-room-services.
+                    \Log::warning(
+                        "Seri service rental '{$serviceRental?->rental_name}' untuk {$completedFirstService->job_number} dilewati: job lama masih menautkannya ke seri rental lain.",
+                        [
+                            'job_schedule_id' => $completedFirstService->id,
+                            'job_advice_id' => $jobAdvice->id,
+                            'job_advice_room_ids' => $plan['ja_room_ids'],
+                            'conflicting_job_schedule_ids' => $plan['conflicts'],
+                        ]
+                    );
+
+                    continue;
                 }
-                
+
+                array_push($planned, ...$plan['rows']);
+            }
+
+            // Buat baris berurutan menurut tanggal (lalu seri), supaya service beberapa rental di
+            // bulan yang sama berdampingan dan bukan seri demi seri.
+            usort($planned, fn ($a, $b) => [$a['date']->format('Y-m-d'), $a['series_index'], $a['period']]
+                <=> [$b['date']->format('Y-m-d'), $b['series_index'], $b['period']]);
+
+            $servicesCreated = [];
+
+            foreach ($planned as $plan) {
                 // MOM14 Fix: New Job should not have a Job Number until assigning team
-                $jobNumber = null;
-                
-                $service = JobSchedule::create([
-                    'job_number' => $jobNumber,
+                $attributes = [
+                    'job_number' => null,
                     'type' => 'service',
                     'status' => 'scheduled',
                     'job_advice_id' => $jobAdvice->id,
@@ -9855,24 +9844,29 @@ class JobScheduleController extends Controller
                     'contract_number' => $completedFirstService->contract_number,
                     'quotation_number' => $completedFirstService->quotation_number,
                     'room_id' => null,
-                    'schedule_date' => $serviceDate,
-                    'expected_date' => $serviceDate,
-                    'period' => $period,
-                    'service_frequency' => $serviceFrequency,
-                    'service_period_type' => $servicePeriodType,
+                    'schedule_date' => $plan['date'],
+                    'expected_date' => $plan['date'],
+                    'period' => $plan['period'],
+                    'service_frequency' => $plan['service_frequency'],
+                    'service_period_type' => $plan['service_period_type'],
                     'reference_number' => $jobAdvice->job_advice_number,
-                    'internal_notes' => "Service period {$period}/{$totalServices} (auto-generated after first service){$roomListNote}",
+                    'internal_notes' => "Service period {$plan['period']}/{$plan['total']} (auto-generated after first service){$plan['room_note']}",
                     'created_by' => Auth::id() ?? \App\Models\User::first()?->id,
                     'updated_by' => Auth::id() ?? \App\Models\User::first()?->id
-                ]);
-                
-                $this->syncJobScheduleRoomsFromJobAdvice($service, $jobAdvice, 'service_job_schedule_id', $servicePhysicalRoomIds, $serviceJobAdviceRoomIds);
-                
+                ];
+                if ($storeSeriesInterval) {
+                    $attributes['service_interval_days'] = $plan['interval_days'];
+                }
+
+                $service = JobSchedule::create($attributes);
+
+                $this->syncJobScheduleRoomsFromJobAdvice($service, $jobAdvice, 'service_job_schedule_id', $plan['physical_room_ids'], $plan['ja_room_ids']);
+
                 $servicesCreated[] = $service;
             }
-            
-            \Log::info("MOM13: Generated " . count($servicesCreated) . " remaining services (period 2-{$totalServices}) for JA {$jobAdvice->job_advice_number}");
-            
+
+            \Log::info("MOM13: Generated " . count($servicesCreated) . " remaining services across " . count($serviceSeries) . " frequency series for JA {$jobAdvice->job_advice_number}");
+
             return $servicesCreated;
 
         } catch (\Exception $e) {
@@ -9880,6 +9874,282 @@ class JobScheduleController extends Controller
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Rencana satu seri frekuensi: periode 2..N yang belum ada beserta tanggalnya. Dipakai oleh
+     * generateAllRemainingServices() dan oleh dry-run repair, supaya hitungannya satu sumber.
+     *
+     * @param  array<int, array{rooms: \Illuminate\Support\Collection, rental: mixed, cadence: ?string}>  $serviceSeries
+     * @param  array{periods: array<int, true>, conflicts: array<int, int>}  $seriesState
+     */
+    private function planServiceFrequencySeries(JobSchedule $completedFirstService, $jobAdvice, array $serviceSeries, int $seriesIndex, array $seriesState): array
+    {
+        $series = $serviceSeries[$seriesIndex];
+        $seriesRooms = $series['rooms'];
+        $serviceRental = $series['rental'];
+        $totalServices = $this->calculateTotalServicePeriodsForRental($jobAdvice, $serviceRental);
+        $serviceJobAdviceRoomIds = $seriesRooms->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        $result = [
+            'series_index' => $seriesIndex,
+            'rental' => $serviceRental,
+            'cadence' => $series['cadence'],
+            'ja_room_ids' => $serviceJobAdviceRoomIds,
+            'total' => $totalServices,
+            'interval_days' => null,
+            'existing_periods' => array_map('intval', array_keys($seriesState['periods'] ?? [])),
+            'conflicts' => array_values(array_unique($seriesState['conflicts'] ?? [])),
+            'skip' => null,
+            'rows' => [],
+        ];
+        sort($result['existing_periods']);
+
+        if (!$totalServices || $totalServices <= 1) {
+            $result['skip'] = 'no_total';
+
+            return $result;
+        }
+
+        if (!empty($result['conflicts'])) {
+            $result['skip'] = 'conflict';
+
+            return $result;
+        }
+
+        // Get service frequency info. Read frequency_months / frequency_times_per_month
+        // directly from RentalServiceFrequency - do NOT re-derive from a string period
+        // type, since seeded frequency names (e.g. "Freq 1x per 3 bulan") never match the
+        // 'monthly'/'quarterly'/... keys below and silently fell back to monthly (bug: a
+        // 3-month rental generated 12 monthly services instead of 4 quarterly ones).
+        $serviceFrequencyObj = $serviceRental?->serviceFrequency;
+        $serviceFrequency = (int) ($serviceFrequencyObj?->frequency_times_per_month ?? 1);
+        $frequencyMonths = max(1, (int) ($serviceFrequencyObj?->frequency_months ?? 1));
+        // Informational only now (display/debugging) - scheduling math uses
+        // $frequencyMonths/$serviceFrequency directly, not this string. Seri tambahan
+        // memakai nama frekuensinya sendiri, bukan milik service pertama.
+        $servicePeriodType = $seriesIndex === 0
+            ? ($completedFirstService->service_period_type ?? $serviceFrequencyObj?->name ?? 'monthly')
+            : ($serviceFrequencyObj?->name ?? $completedFirstService->service_period_type ?? 'monthly');
+
+        $servicePhysicalRoomIds = $seriesRooms
+            ->map(fn ($jaRoom) => $this->getJobAdviceRoomPhysicalRoomId($jaRoom))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        // Build room list
+        $roomNames = $seriesRooms
+            ->pluck('room_name')
+            ->filter()
+            ->toArray();
+        $roomListNote = count($roomNames) > 0
+            ? "\n[Rooms: " . implode(', ', $roomNames) . "]"
+            : '';
+        if (count($serviceSeries) > 1 && $serviceRental?->rental_name) {
+            $roomListNote .= "\n[Rental: {$serviceRental->rental_name}]";
+        }
+
+        // Base date is the first service date
+        $baseDate = \Carbon\Carbon::parse($completedFirstService->schedule_date);
+
+        // Determince Interval Logic
+        $frequencyTimes = max(1, $serviceFrequency);
+        $useDayInterval = $frequencyTimes > 1;
+        $intervalDays = 0;
+
+        if ($useDayInterval) {
+            // Formula: (30 days * frequency_months) / frequency_times
+            $daysInPeriod = 30 * $frequencyMonths;
+            $intervalDays = floor($daysInPeriod / $frequencyTimes);
+        }
+
+        $result['interval_days'] = JobSchedule::serviceSeriesIntervalDays($frequencyMonths, $frequencyTimes);
+
+        // Generate remaining services (period 2 to totalServices)
+        for ($period = 2; $period <= $totalServices; $period++) {
+            // Check if this period already exists for this series
+            if (isset($seriesState['periods'][$period])) {
+                continue;
+            }
+
+            $serviceDate = $useDayInterval
+                ? $baseDate->copy()->addDays(($period - 1) * $intervalDays)
+                : $baseDate->copy()->addMonths(($period - 1) * $frequencyMonths);
+
+            $result['rows'][] = [
+                'date' => $serviceDate,
+                'series_index' => $seriesIndex,
+                'period' => $period,
+                'total' => $totalServices,
+                'service_frequency' => $serviceFrequency,
+                'service_period_type' => $servicePeriodType,
+                'interval_days' => $result['interval_days'],
+                'room_note' => $roomListNote,
+                'ja_room_ids' => $serviceJobAdviceRoomIds,
+                'physical_room_ids' => $servicePhysicalRoomIds,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Gambaran seri frekuensi service untuk satu service pertama yang sudah selesai (dipakai
+     * operational:repair-multi-frequency-room-services). Hanya membaca.
+     *
+     * @param  bool  $assumeConflictsResolved  rencanakan seolah job lama yang menautkan beberapa
+     *         seri sudah dirapikan (rental seri lain sudah dilepas).
+     * @return array<int, array<string, mixed>>
+     */
+    public function describeServiceFrequencySeries(JobSchedule $completedFirstService, $jobAdvice, bool $assumeConflictsResolved = false): array
+    {
+        $eligibleRoomIds = $this->getFinalizedRoomIdsForSchedule($completedFirstService);
+        if (empty($eligibleRoomIds)) {
+            return [];
+        }
+
+        $serviceEligibleRooms = $this->getServiceEligibleJobAdviceRoomsForSchedule($completedFirstService, $jobAdvice, $eligibleRoomIds);
+        if ($serviceEligibleRooms->isEmpty()) {
+            return [];
+        }
+
+        $serviceSeries = $this->groupServiceRoomsIntoFrequencySeries($serviceEligibleRooms);
+        $existingBySeries = $this->existingServicePeriodsBySeries($jobAdvice, $serviceSeries);
+
+        $described = [];
+        foreach (array_keys($serviceSeries) as $seriesIndex) {
+            $state = $existingBySeries[$seriesIndex] ?? ['periods' => [], 'conflicts' => []];
+            $conflicts = array_values(array_unique($state['conflicts']));
+            if ($assumeConflictsResolved) {
+                $state['conflicts'] = [];
+            }
+
+            $plan = $this->planServiceFrequencySeries($completedFirstService, $jobAdvice, $serviceSeries, $seriesIndex, $state);
+            $plan['conflicts'] = $conflicts;
+            $described[] = $plan;
+        }
+
+        return $described;
+    }
+
+    /**
+     * Kunci ritme service rental: "bulan x kali-per-bulan" dari RentalServiceFrequency, null bila
+     * rental/frekuensinya tak terbaca.
+     */
+    private function serviceFrequencyCadenceKey($jaRoom): ?string
+    {
+        $frequency = $jaRoom?->rentalProduct?->serviceFrequency;
+        if (!$frequency) {
+            return null;
+        }
+
+        return max(1, (int) ($frequency->frequency_months ?? 1)).'x'.max(1, (int) ($frequency->frequency_times_per_month ?? 1));
+    }
+
+    /**
+     * QA batch 4 (27 Nov 2026): kelompokkan baris rental JA yang layak service menjadi seri per
+     * frekuensi service. Seri ke-0 selalu milik rental PERTAMA (perilaku lama); rental tanpa
+     * frekuensi terbaca ikut seri ke-0 seperti dulu. Rental berfrekuensi lain mendapat seri sendiri.
+     *
+     * @return array<int, array{rooms: \Illuminate\Support\Collection, rental: mixed, cadence: ?string}>
+     */
+    private function groupServiceRoomsIntoFrequencySeries(\Illuminate\Support\Collection $serviceEligibleRooms): array
+    {
+        $primaryKey = $this->serviceFrequencyCadenceKey($serviceEligibleRooms->first()) ?? 'none';
+        $groups = [];
+
+        foreach ($serviceEligibleRooms as $jaRoom) {
+            $key = $this->serviceFrequencyCadenceKey($jaRoom) ?? $primaryKey;
+            $groups[$key][] = $jaRoom;
+        }
+
+        // Seri rental pertama tetap di depan, sisanya mengikuti urutan baris JA.
+        $ordered = [$primaryKey => $groups[$primaryKey] ?? []] + $groups;
+
+        $series = [];
+        foreach ($ordered as $key => $rooms) {
+            if (empty($rooms)) {
+                continue;
+            }
+
+            $rooms = collect($rooms)->values();
+            $series[] = [
+                'rooms' => $rooms,
+                'rental' => $rooms->first()?->rentalProduct,
+                'cadence' => $key === 'none' ? null : $key,
+            ];
+        }
+
+        return $series;
+    }
+
+    /**
+     * Periode service yang sudah ada per seri. Job lama (sebelum perbaikan QA batch 4) bisa
+     * menautkan rental beberapa seri sekaligus; job seperti itu dihitung milik seri pertama yang
+     * ditautkannya (seri yang dulu menentukan tanggalnya), dan dicatat sebagai konflik untuk seri
+     * lain supaya rental itu tidak dijadwalkan dua kali.
+     *
+     * @param  array<int, array{rooms: \Illuminate\Support\Collection}>  $serviceSeries
+     * @return array<int, array{periods: array<int, true>, conflicts: array<int, int>}>
+     */
+    private function existingServicePeriodsBySeries($jobAdvice, array $serviceSeries): array
+    {
+        $seriesByJobAdviceRoomId = [];
+        foreach ($serviceSeries as $seriesIndex => $series) {
+            foreach ($series['rooms'] as $jaRoom) {
+                $seriesByJobAdviceRoomId[(int) $jaRoom->id] = $seriesIndex;
+            }
+        }
+
+        $state = [];
+        foreach (array_keys($serviceSeries) as $seriesIndex) {
+            $state[$seriesIndex] = ['periods' => [], 'conflicts' => []];
+        }
+
+        if (empty($seriesByJobAdviceRoomId)) {
+            return $state;
+        }
+
+        $jobs = JobSchedule::query()
+            ->where('job_advice_id', $jobAdvice->id)
+            ->whereIn('type', ['service', 'service_first', 'service_routine'])
+            ->whereHas('jobScheduleRooms.rentals', function ($query) use ($seriesByJobAdviceRoomId) {
+                $query->whereIn('job_advice_room_id', array_keys($seriesByJobAdviceRoomId));
+            })
+            ->with('jobScheduleRooms.rentals')
+            ->get();
+
+        foreach ($jobs as $job) {
+            $linkedSeries = $job->jobScheduleRooms
+                ->flatMap(fn ($room) => $room->rentals->pluck('job_advice_room_id'))
+                ->map(fn ($id) => $seriesByJobAdviceRoomId[(int) $id] ?? null)
+                ->filter(fn ($index) => $index !== null)
+                ->unique()
+                ->sort()
+                ->values();
+
+            if ($linkedSeries->isEmpty()) {
+                continue;
+            }
+
+            $owner = (int) $linkedSeries->first();
+            $period = (int) ($job->period ?: (strtolower((string) $job->type) === 'service_first' ? 1 : 0));
+            if ($period > 0) {
+                $state[$owner]['periods'][$period] = true;
+            }
+
+            // Service pertama memang menautkan semua rental ruangan — itu bukan konflik.
+            if ($period > 1) {
+                foreach ($linkedSeries->slice(1) as $otherIndex) {
+                    $state[(int) $otherIndex]['conflicts'][] = (int) $job->id;
+                }
+            }
+        }
+
+        return $state;
     }
 
     /**
@@ -12382,7 +12652,11 @@ class JobScheduleController extends Controller
                         $strictQuery->where('id', $selectedJob->id);
                     }
 
-                    $siblings = $strictQuery->get();
+                    // QA batch 4: periode yang sama milik seri rental lain (bulan berbeda) bukan saudara.
+                    $siblings = $strictQuery->get()
+                        ->filter(fn ($sibling) => (int) $sibling->id === (int) $selectedJob->id
+                            || $sibling->serviceSeriesMarker() === $selectedJob->serviceSeriesMarker())
+                        ->values();
                 } else {
                     // Find all siblings to ensure we get the whole group for team assignment flows.
                     $query = JobSchedule::with(['jobAssignSchedules.team', 'jobAssignSchedules.jobAssignMaterialIssues.materialIssue.items', 'jobScheduleRooms'])

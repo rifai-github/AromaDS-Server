@@ -892,6 +892,15 @@ class InventoryIssuingService
                 } else {
                     $query->whereNull('period');
                 }
+
+                // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan
+                // berbeda) bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
+                $relatedJobs = $relatedJobs->merge($query->get()->filter(
+                    fn ($related) => (int) $related->id === (int) $baseJob->id
+                        || $related->serviceSeriesMarker() === $baseJob->serviceSeriesMarker()
+                ));
+
+                continue;
             } else {
                 $query->where('id', $baseJob->id);
             }

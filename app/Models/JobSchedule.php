@@ -1255,6 +1255,50 @@ class JobSchedule extends Model
         ]);
     }
 
+    /** Interval (hari) seri service bulanan 1x — disamakan dengan NULL (data lama). */
+    public const DEFAULT_SERVICE_SERIES_INTERVAL_DAYS = 30;
+
+    /**
+     * QA batch 4 (27 Nov 2026, JA ADS-JA/26-11/0007 Ruang-5): satu ruangan bisa memegang dua
+     * rental dengan frekuensi service berbeda (TestRO2b1x 2 bulan 1x + TestVG1b1x 1 bulan 1x).
+     * Masing-masing kini punya seri job service sendiri, dan `period` dihitung per seri — jadi
+     * "periode 2" seri 2-bulanan (bulan ke-3) BUKAN kunjungan yang sama dengan "periode 2" seri
+     * bulanan (bulan ke-2). Pembedanya `service_interval_days` (30 x frequency_months /
+     * frequency_times_per_month) yang diisi generator service lanjutan.
+     *
+     * Seri bulanan 1x (30 hari) dan data lama (NULL) memberi penanda kosong, sehingga
+     * pengelompokan Job View / Material Assign / saudara job untuk kasus yang sudah ada tidak
+     * berubah. Harus sama dengan serviceSeriesGroupingSql().
+     */
+    public function serviceSeriesMarker(): string
+    {
+        $type = strtolower(trim((string) ($this->type ?? '')));
+        if (! in_array($type, ['service', 'service_first', 'service_routine'], true)) {
+            return '';
+        }
+
+        $days = (int) ($this->getAttributes()['service_interval_days'] ?? 0);
+
+        return $days > 0 && $days !== self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS
+            ? "|every:{$days}d"
+            : '';
+    }
+
+    /** Ekspresi SQL padanan serviceSeriesMarker() (0 = seri bawaan). */
+    public static function serviceSeriesGroupingSql(): string
+    {
+        return "CASE WHEN LOWER(COALESCE(type, '')) IN ('service', 'service_first', 'service_routine') AND COALESCE(service_interval_days, 0) NOT IN (0, ".self::DEFAULT_SERVICE_SERIES_INTERVAL_DAYS.') THEN service_interval_days ELSE 0 END';
+    }
+
+    /** Interval hari seri service dari RentalServiceFrequency (bulanan 1x = 30). */
+    public static function serviceSeriesIntervalDays(?int $frequencyMonths, ?int $frequencyTimesPerMonth): int
+    {
+        $months = max(1, (int) $frequencyMonths);
+        $times = max(1, (int) $frequencyTimesPerMonth);
+
+        return max(1, (int) floor((30 * $months) / $times));
+    }
+
     // Service Frequency Methods
     public function calculateServiceInterval()
     {

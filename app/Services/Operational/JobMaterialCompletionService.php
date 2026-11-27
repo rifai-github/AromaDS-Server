@@ -164,6 +164,14 @@ class JobMaterialCompletionService
             } else {
                 $query->whereNull('period');
             }
+
+            // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan berbeda)
+            // bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
+            return $query->get()
+                ->filter(fn ($related) => (int) $related->id === (int) $jobSchedule->id
+                    || $related->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+                ->unique('id')
+                ->values();
         }
 
         return $query->get()->unique('id')->values();

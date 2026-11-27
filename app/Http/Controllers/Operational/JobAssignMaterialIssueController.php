@@ -4370,7 +4370,11 @@ class JobAssignMaterialIssueController extends Controller
             $query->whereNull('period');
         }
 
-        return $query->get();
+        // QA batch 4 (27 Nov 2026): periode yang sama milik seri rental lain (bulan berbeda)
+        // bukan saudara. Lihat JobSchedule::serviceSeriesMarker().
+        return $query->get()
+            ->filter(fn ($sibling) => $sibling->serviceSeriesMarker() === $jobSchedule->serviceSeriesMarker())
+            ->values();
     }
 
     private function buildSubmitIssueGroupingKey(JobSchedule $jobSchedule): string
@@ -4384,7 +4388,7 @@ class JobAssignMaterialIssueController extends Controller
             $jobSchedule->building_id ?? 'no-building',
             $jobSchedule->type ?? 'no-type',
             $jobSchedule->period ?? 'no-period',
-        ]);
+        ]).$jobSchedule->serviceSeriesMarker();
     }
 
     private function formatJobRoomLabel(JobSchedule $jobSchedule): string
