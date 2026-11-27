@@ -826,7 +826,8 @@
                                         <div class="contract-field-value">
                                             @forelse($contract->display_quotations as $quotation)
                                                 <a href="{{ route('marketing.quotations.show', $quotation->id) }}" class="text-primary fw-bold me-2" target="_blank" rel="noopener noreferrer">
-                                                    {{ $quotation->quotation_number }}
+                                                    {{-- QA 26 Nov 2026: tampilkan revisi SQ yang dipakai kontrak (mis. BLP-SQ/26-11/0004-2). --}}
+                                                    {{ $quotation->quotation_number . ((int) ($quotation->revision_number ?? 0) > 0 ? '-' . (int) $quotation->revision_number : '') }}
                                                     <i class="fas fa-external-link-alt fa-xs ms-1"></i>
                                                 </a>{{ !$loop->last ? ',' : '' }}
                                             @empty
