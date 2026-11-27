@@ -4350,6 +4350,215 @@ class JobController extends Controller
         return null;
     }
 
+    /**
+     * Pesan penolakan bila SN ini milik rental LAIN di ruangan fisik yang sama (kartu lain di
+     * APK). NULL = boleh / tidak bisa dipastikan.
+     *
+     * QA 27 Nov 2026 (JKT-IF/26-11/0003, Ruang-3 TestUO1b3x + TestHIKDisp): kedua rental sama-sama
+     * butuh dispenser, jadi unitScanMismatchForRental() - yang hanya membandingkan kategori -
+     * meloloskan dispenser yang diterbitkan untuk TestUO1b3x di kartu TestHIKDisp dan sebaliknya.
+     * SN terdaftar ke rental/job-nya, bukan ke ruangannya:
+     *  - SN yang diterbitkan lewat Material Assign job ini -> rental baris MI-nya
+     *    (rentalIdsSerialWasIssuedForOnJob());
+     *  - unit yang sudah terpasang (job service/remove/complain) -> unit_on_walls.rental_id.
+     *
+     * Hanya menolak bila rental pemilik SN itu adalah rental lain yang punya kartu sendiri di
+     * ruangan yang sama (sama-sama rental ber-unit). SN dari ruangan lain tetap ditangani oleh
+     * penjagaan room; refill-only yang dipaket ke kartu unit tidak ikut ditolak.
+     */
+    private function serialBelongsToSiblingRentalMessage(JobSchedule $job, int $targetAdviceRoomId, string $identifier): ?string
+    {
+        $identifier = trim($identifier);
+        $targetRoom = $identifier !== '' ? \App\Models\JobAdviceRoom::with('rentalProduct')->find($targetAdviceRoomId) : null;
+        $ownRentalId = (int) ($targetRoom?->rental_product_id ?? 0);
+
+        if (! $targetRoom || ! $ownRentalId || ! $targetRoom->job_advice_id) {
+            return null;
+        }
+
+        $ownerRentalIds = $this->rentalIdsSerialWasIssuedForOnJob($job, $identifier);
+        $source = 'issued';
+
+        if ($ownerRentalIds === null) {
+            $serialIds = \App\Models\SerialNumber::whereRaw('TRIM(serial_number) = ?', [$identifier])->pluck('id');
+            $customerId = $job->jobAdvice?->customer_id;
+            $ownerRentalIds = \App\Models\UnitOnWall::query()
+                ->where('status', 'active')
+                ->whereNotNull('rental_id')
+                ->where(function ($query) use ($identifier, $serialIds) {
+                    $query->whereRaw('TRIM(serial_number) = ?', [$identifier]);
+                    if ($serialIds->isNotEmpty()) {
+                        $query->orWhereIn('serial_number_id', $serialIds);
+                    }
+                })
+                ->when($customerId, fn ($query) => $query->where('customer_id', $customerId))
+                ->pluck('rental_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+            $source = 'unit_on_wall';
+        }
+
+        if ($ownerRentalIds === [] || in_array($ownRentalId, $ownerRentalIds, true)) {
+            return null;
+        }
+
+        if (! $this->jobAdviceRoomRequiresUnit($targetRoom)) {
+            return null;
+        }
+
+        $targetKey = $this->getJobAdviceRoomPhysicalKey($targetRoom);
+        $siblingRoom = \App\Models\JobAdviceRoom::with('rentalProduct')
+            ->where('job_advice_id', $targetRoom->job_advice_id)
+            ->where('id', '!=', $targetRoom->id)
+            ->whereIn('rental_product_id', $ownerRentalIds)
+            ->get()
+            ->first(fn ($room) => $this->getJobAdviceRoomPhysicalKey($room) === $targetKey
+                && $this->jobAdviceRoomRequiresUnit($room));
+
+        if (! $siblingRoom) {
+            return null;
+        }
+
+        $ownRentalName = $this->getJobAdviceRoomRentalDisplayName($targetRoom);
+        $siblingRentalName = $this->getJobAdviceRoomRentalDisplayName($siblingRoom);
+        $roomName = $siblingRoom->contractRoom?->room?->room_name ?? $siblingRoom->room_name ?? $targetRoom->room_name;
+        $cardLabel = trim(($roomName ? "{$roomName} - " : '').$siblingRentalName);
+
+        if ($source === 'issued') {
+            return "Serial Number {$identifier} diterbitkan untuk rental {$siblingRentalName}, bukan {$ownRentalName}. Scan SN ini di kartu {$cardLabel}.";
+        }
+
+        return "Serial Number {$identifier} terpasang untuk rental {$siblingRentalName}, bukan {$ownRentalName}. Kerjakan SN ini di kartu {$cardLabel}.";
+    }
+
+    /**
+     * master_rental_id rental yang menjadi tujuan penerbitan SN ini di Material Assign job ini.
+     * NULL = SN tidak diterbitkan lewat MI job ini, atau rentalnya tidak bisa dipastikan.
+     *
+     * Baris inventory_issuing_items tidak membawa rental; rental hanya tercatat di catatan baris
+     * material_issue_items ("RentalDetailID: N"). createInventoryIssuingFromMaterialIssue()
+     * membuat tepat satu baris WI per baris MI, berurutan, dengan job_assign_schedule_id,
+     * room_name dan product_id yang sama - jadi baris WI ke-k dalam kelompok
+     * (assignment, ruangan, produk) adalah baris MI ke-k kelompok itu. Bila semua baris MI
+     * kelompoknya berasal dari satu rental, rental itu dipakai tanpa melihat urutan. Bila jumlah
+     * baris tidak sama (mis. aroma diganti di WI) atau catatan tanpa RentalDetailID, hasilnya
+     * NULL supaya tidak ada SN sah yang tertolak.
+     */
+    private function rentalIdsSerialWasIssuedForOnJob(JobSchedule $job, string $identifier): ?array
+    {
+        $identifier = trim($identifier);
+        if ($identifier === '') {
+            return null;
+        }
+
+        $serialIds = \App\Models\SerialNumber::whereRaw('TRIM(serial_number) = ?', [$identifier])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        if ($serialIds === []) {
+            return null;
+        }
+
+        $assignmentIds = \DB::table('job_assign_schedules')->where('job_schedule_id', $job->id)->pluck('id');
+        if ($assignmentIds->isEmpty()) {
+            return null;
+        }
+
+        $materialIssues = \DB::table('material_issues')
+            ->whereIn('id', \DB::table('job_assign_material_issues')
+                ->whereIn('job_assign_schedule_id', $assignmentIds)
+                ->pluck('material_issue_id'))
+            ->get(['id', 'issue_number']);
+
+        $hasSerialLinks = \Illuminate\Support\Facades\Schema::hasTable('inventory_issuing_item_serials');
+        $groupKey = fn ($row) => (int) $row->job_assign_schedule_id.'|'.strtolower(trim((string) $row->room_name)).'|'.(int) $row->product_id;
+        $rentalIds = [];
+        $found = false;
+
+        foreach ($materialIssues as $materialIssue) {
+            $issuingIds = \DB::table('inventory_issuings')
+                ->where('reference_no', $materialIssue->issue_number)
+                ->where('status', '!=', 'cancelled')
+                ->pluck('id');
+            if ($issuingIds->isEmpty()) {
+                continue;
+            }
+
+            $issuingItems = \DB::table('inventory_issuing_items')
+                ->whereIn('inventory_issuing_id', $issuingIds)
+                ->orderBy('id')
+                ->get(['id', 'job_assign_schedule_id', 'room_name', 'product_id', 'serial_number_id']);
+            $linkedItemIds = $hasSerialLinks
+                ? \DB::table('inventory_issuing_item_serials')
+                    ->whereIn('inventory_issuing_item_id', $issuingItems->pluck('id'))
+                    ->whereIn('serial_number_id', $serialIds)
+                    ->pluck('inventory_issuing_item_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all()
+                : [];
+            $matchingItems = $issuingItems->filter(fn ($item) => in_array((int) $item->id, $linkedItemIds, true)
+                || in_array((int) $item->serial_number_id, $serialIds, true));
+            if ($matchingItems->isEmpty()) {
+                continue;
+            }
+            $found = true;
+
+            $issueItems = \DB::table('material_issue_items')
+                ->where('material_issue_id', $materialIssue->id)
+                ->whereNull('deleted_at')
+                ->orderBy('id')
+                ->get(['id', 'job_assign_schedule_id', 'room_name', 'product_id', 'notes']);
+            $detailIds = $issueItems
+                ->map(fn ($item) => preg_match('/RentalDetailID:\s*(\d+)/i', (string) $item->notes, $m) ? (int) $m[1] : null)
+                ->filter()
+                ->unique()
+                ->values();
+            $rentalByDetailId = $detailIds->isEmpty()
+                ? collect()
+                : \App\Models\RentalDetail::withTrashed()->whereIn('id', $detailIds)->pluck('master_rental_id', 'id');
+            $rentalOf = function ($issueItem) use ($rentalByDetailId): ?int {
+                if (! $issueItem || ! preg_match('/RentalDetailID:\s*(\d+)/i', (string) $issueItem->notes, $m)) {
+                    return null;
+                }
+                $rentalId = $rentalByDetailId[(int) $m[1]] ?? null;
+
+                return $rentalId ? (int) $rentalId : null;
+            };
+
+            $issueGroups = $issueItems->groupBy($groupKey);
+            $issuingGroups = $issuingItems->groupBy($groupKey);
+
+            foreach ($matchingItems as $item) {
+                $key = $groupKey($item);
+                $groupIssueItems = ($issueGroups[$key] ?? collect())->values();
+                $groupRentals = $groupIssueItems->map($rentalOf);
+
+                if ($groupRentals->isNotEmpty() && ! $groupRentals->contains(null) && $groupRentals->unique()->count() === 1) {
+                    $rentalIds[] = (int) $groupRentals->first();
+
+                    continue;
+                }
+
+                $groupIssuingItems = ($issuingGroups[$key] ?? collect())->values();
+                if ($groupIssueItems->count() !== $groupIssuingItems->count()) {
+                    return null;
+                }
+
+                $position = $groupIssuingItems->search(fn ($candidate) => (int) $candidate->id === (int) $item->id);
+                $rentalId = $position === false ? null : $rentalOf($groupIssueItems[$position] ?? null);
+                if (! $rentalId) {
+                    return null;
+                }
+
+                $rentalIds[] = $rentalId;
+            }
+        }
+
+        return $found ? array_values(array_unique($rentalIds)) : null;
+    }
+
     private function canonicalUnitAdviceRoomId(JobSchedule $job, int $requestedAdviceRoomId): int
     {
         $requestedRoom = \App\Models\JobAdviceRoom::find($requestedAdviceRoomId);
@@ -5851,6 +6060,18 @@ class JobController extends Controller
                 ], 409);
             }
 
+            // QA 27 Nov 2026 (JKT-IF/26-11/0003): SN yang diterbitkan / terpasang untuk rental lain
+            // di ruangan yang sama ditolak, walau kategorinya sama dengan kebutuhan rental ini.
+            if ($siblingMismatch = $this->serialBelongsToSiblingRentalMessage($jobSchedule, $targetRoomId, (string) $request->mac)) {
+                \DB::rollBack();
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $siblingMismatch,
+                    'rental_mismatch' => true,
+                ], 409);
+            }
+
             // QA 26 Nov 2026 (JKT-IF/26-11/0003): unit untuk satu rental tidak boleh masuk ke rental
             // lain di ruangan yang sama (SN HIKV diterima di rental dispenser, SN dispenser diterima
             // di slot unit ke-2). Hanya untuk job pemasangan; job service/complain/ganti tetap bebas.
@@ -7160,6 +7381,24 @@ class JobController extends Controller
             ], 400);
         }
 
+        // QA 27 Nov 2026: Ganti Unit di kartu rental A tidak boleh memakai unit lama atau SN baru
+        // milik rental B di ruangan yang sama. room_id dari APK = job_advice_room_id kartu.
+        $swapCardRoom = is_numeric($roomId) && \Illuminate\Support\Facades\Schema::hasTable('job_advice_rooms')
+            ? \App\Models\JobAdviceRoom::find((int) $roomId)
+            : null;
+        if ($swapCardRoom && (int) $swapCardRoom->job_advice_id === (int) $job->job_advice_id) {
+            foreach ([$oldSn, $newSn] as $swapSerial) {
+                $siblingMismatch = $this->serialBelongsToSiblingRentalMessage($job, (int) $swapCardRoom->id, (string) $swapSerial);
+                if ($siblingMismatch !== null) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $siblingMismatch,
+                        'rental_mismatch' => true,
+                    ], 409);
+                }
+            }
+        }
+
         DB::beginTransaction();
         try {
             $uow = \App\Models\UnitOnWall::where('customer_id', $job->jobAdvice->customer_id)
@@ -7405,8 +7644,11 @@ class JobController extends Controller
             // mana, sebelum teknisi memilih apa pun. Panggilan seperti itu harus murni
             // baca - lihat penjagaan di blok SN bypass di bawah.
             'resolve_only' => 'sometimes|boolean',
+            // Opsional (APK baru): job_advice_room_id kartu yang sedang dikerjakan, supaya SN
+            // milik rental lain di ruangan yang sama langsung ditolak saat scan.
+            'room_id' => 'sometimes|nullable|integer',
         ]);
-        
+
         $job = JobSchedule::with(['building', 'jobAdvice.customer'])->findOrFail($id);
         if ($deny = $this->denyIfNotAssigned($job)) return $deny;
         // Normalize serial number: trim whitespace only (SN is case-sensitive)
@@ -7432,6 +7674,22 @@ class JobController extends Controller
                     'expected_room' => $conflictRoom,
                     'selected_room' => $selectedRoomName,
                 ], 400);
+            }
+        }
+
+        // QA 27 Nov 2026 (JKT-IF/26-11/0003): SN milik rental lain di ruangan yang sama ditolak
+        // sebelum teknisi mengisi data unit. Penjagaan otoritatifnya tetap di saveScannedUnit.
+        if ($request->filled('room_id') && ! $request->boolean('resolve_only')) {
+            $cardRoom = \App\Models\JobAdviceRoom::find((int) $request->room_id);
+            if ($cardRoom && (int) $cardRoom->job_advice_id === (int) $job->job_advice_id) {
+                $siblingMismatch = $this->serialBelongsToSiblingRentalMessage($job, (int) $cardRoom->id, $serialNumberInput);
+                if ($siblingMismatch !== null) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => $siblingMismatch,
+                        'rental_mismatch' => true,
+                    ], 409);
+                }
             }
         }
 
