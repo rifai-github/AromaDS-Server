@@ -199,6 +199,8 @@ class CatalystMasterDataImporter
     private ?array $catalystRoomAndFloorNames = null;
     /** @var array<string, array<string, string>> master option -> [lower(nama) => option_name] */
     private array $masterOptionSpellingCache = [];
+    /** @var array<int, true> master_rooms yang sudah diperiksa repairImportedRoomLabels() */
+    private array $checkedRoomLabelIds = [];
     /** @var array<string, string>|null nomor SQ -> price_basis dari kontraknya */
     private ?array $sourceQuotationPriceBasisCache = null;
     /** @var array<string, true>|null cache eligibleContractNumbers() */
@@ -3750,9 +3752,11 @@ class CatalystMasterDataImporter
      */
     protected function repairImportedRoomLabels(int $roomId, ?string $roomType, ?string $floorName, ?string $floorCode): void
     {
-        if (!$this->apply || $roomId < 1) {
+        // Satu ruangan ditemui berkali-kali (survey, SQ, kontrak); cukup diperiksa sekali per run.
+        if (!$this->apply || $roomId < 1 || isset($this->checkedRoomLabelIds[$roomId])) {
             return;
         }
+        $this->checkedRoomLabelIds[$roomId] = true;
 
         $room = DB::table('master_rooms')->where('id', $roomId)->first();
         if (!$room) {
