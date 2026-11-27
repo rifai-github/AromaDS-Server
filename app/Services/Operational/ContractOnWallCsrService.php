@@ -332,7 +332,10 @@ class ContractOnWallCsrService
                 'rooms.contractRoom.room',
                 'rooms.quotationRoom.room',
             ])
-            ->where('quotation_id', $contract->quotation_id)
+            // QA 26 Nov 2026 (BLP-CA/26-11/0004 Ruang-1): trial dipasang lewat SQ revisi 1, kontrak
+            // dibuat dari revisi 2. Dulu hanya JA revisi kontrak yang dicari, jadi Job Check Unit
+            // Only tak pernah dibuat. Cari di semua revisi SQ yang sama; ruangan dibatasi di bawah.
+            ->whereIn('quotation_id', $this->sameQuotationRevisionIds($contract))
             ->where(function ($query) use ($contract) {
                 $query->whereNull('contract_id')
                     ->orWhere('contract_id', $contract->id);
@@ -349,8 +352,18 @@ class ContractOnWallCsrService
 
         $controller = app(JobScheduleController::class);
         $createdCount = 0;
+        $contractRoomIds = \App\Models\ContractRoom::where('contract_id', $contract->id)
+            ->whereNotNull('room_id')
+            ->pluck('room_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
         foreach ($jobAdvices as $jobAdvice) {
+            // JA dari revisi SQ lain: hanya ruangan yang masuk kontrak (Ruang-3 yang tak ikut
+            // kontrak tidak boleh dapat Job Check).
+            $allowedRoomIds = (int) $jobAdvice->quotation_id === (int) $contract->quotation_id ? null : $contractRoomIds;
             $jobAdvice->setRelation('contract', $contract);
 
             $completedInstalls = JobSchedule::query()
@@ -366,11 +379,29 @@ class ContractOnWallCsrService
                     $completedInstall->contract_number = $contract->contract_number;
                 }
 
-                $createdCount += count($controller->generateUnitOnlyCheckSchedulesAfterInstall($completedInstall, $jobAdvice));
+                $createdCount += count($controller->generateUnitOnlyCheckSchedulesAfterInstall($completedInstall, $jobAdvice, $allowedRoomIds));
             }
         }
 
         return $createdCount;
+    }
+
+    /**
+     * id semua revisi (belum dihapus) dari nomor SQ kontrak; minimal quotation kontrak itu sendiri.
+     */
+    private function sameQuotationRevisionIds(Contract $contract): array
+    {
+        $ids = [(int) $contract->quotation_id];
+        $quotationNumber = $contract->quotation?->quotation_number;
+
+        if ($quotationNumber) {
+            $ids = array_merge($ids, \App\Models\Quotation::where('quotation_number', $quotationNumber)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all());
+        }
+
+        return array_values(array_unique(array_filter($ids)));
     }
 
     private function createJobAdvice(Contract $contract, Carbon $serviceDate, ?int $userId, string $trigger): JobAdvice

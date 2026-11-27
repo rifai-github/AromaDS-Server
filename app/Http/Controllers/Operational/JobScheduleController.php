@@ -9849,7 +9849,12 @@ class JobScheduleController extends Controller
         }
     }
 
-    public function generateUnitOnlyCheckSchedulesAfterInstall(JobSchedule $completedInstallJob, $jobAdvice): array
+    /**
+     * @param  array<int, int>|null  $allowedPhysicalRoomIds  bila diisi, hanya ruangan fisik ini yang
+     *         dibuatkan Job Check (dipakai saat JA trial berasal dari revisi SQ lain: hanya ruangan
+     *         yang benar-benar masuk kontrak).
+     */
+    public function generateUnitOnlyCheckSchedulesAfterInstall(JobSchedule $completedInstallJob, $jobAdvice, ?array $allowedPhysicalRoomIds = null): array
     {
         $createdChecks = [];
 
@@ -9874,12 +9879,13 @@ class JobScheduleController extends Controller
             ]);
 
             $unitOnlyRooms = $jobAdvice->rooms
-                ->filter(function ($jaRoom) use ($completedRoomIds) {
+                ->filter(function ($jaRoom) use ($completedRoomIds, $allowedPhysicalRoomIds) {
                     $physicalRoomId = $this->getJobAdviceRoomPhysicalRoomId($jaRoom);
 
                     return $this->jobAdviceRoomShouldGenerateUnitOnlyCheck($jaRoom)
                         && $physicalRoomId
-                        && in_array((int) $physicalRoomId, $completedRoomIds, true);
+                        && in_array((int) $physicalRoomId, $completedRoomIds, true)
+                        && ($allowedPhysicalRoomIds === null || in_array((int) $physicalRoomId, $allowedPhysicalRoomIds, true));
                 })
                 ->groupBy(fn ($jaRoom) => (int) $this->getJobAdviceRoomPhysicalRoomId($jaRoom));
 
