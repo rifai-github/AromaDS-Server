@@ -849,4 +849,133 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertSame('Meeting Room', $manual->room_type);
         $this->assertSame('Lantai Dua', $manual->room_floor);
     }
+
+    // ── 7. Kontrak aktif tampil "Expired" ───────────────────────────────────
+
+    private function createQuotationSource(): void
+    {
+        $this->create('MKTQuotationHd', function (Blueprint $table) {
+            $table->string('TransNmbr');
+            $table->integer('Revisi')->default(0);
+            $table->dateTime('TransDate')->nullable();
+            $table->string('Status')->nullable();
+            $table->string('Branch')->nullable();
+            $table->string('SalesType')->nullable();
+            $table->string('Sales')->nullable();
+            $table->string('Customer')->nullable();
+            $table->string('ContactName')->nullable();
+            $table->integer('ContractPeriod')->nullable();
+            $table->decimal('BaseForex', 18, 4)->nullable();
+            $table->decimal('DiscForex', 18, 4)->nullable();
+            $table->decimal('PPnForex', 18, 4)->nullable();
+            $table->decimal('TotalForex', 18, 4)->nullable();
+            $table->string('Remark')->nullable();
+            $table->string('RemarkInternal')->nullable();
+            $table->string('FgActive')->nullable();
+            $table->string('DoneContractPrice')->nullable();
+            $table->string('Term')->nullable();
+            $table->string('FgDoneSOContract')->nullable();
+            $table->string('SOContractNo')->nullable();
+            $table->string('BillTo')->nullable();
+        });
+        $this->create('MKTQuotationRental', function (Blueprint $table) {
+            $table->string('TransNmbr');
+            $table->integer('Revisi')->default(0);
+            $table->string('Building')->nullable();
+            $table->string('Product')->nullable();
+            $table->string('FrequencyService')->nullable();
+            $table->decimal('QtyInstall', 15, 4)->nullable();
+            $table->decimal('QtyTotal', 15, 4)->nullable();
+            $table->decimal('QtyFree', 15, 4)->nullable();
+            $table->decimal('PriceForex', 18, 4)->nullable();
+            $table->decimal('AmountForex', 18, 4)->nullable();
+            $table->string('OldContractNo')->nullable();
+            $table->decimal('QtyContract', 15, 4)->nullable();
+            $table->string('FloorCode')->nullable();
+            $table->string('RoomCode')->nullable();
+            $table->string('Room')->nullable();
+            $table->decimal('Panjang', 8, 2)->nullable();
+            $table->decimal('Lebar', 8, 2)->nullable();
+            $table->decimal('Tinggi', 8, 2)->nullable();
+        });
+
+        // ADS-SQ/26-07/1544 apa adanya di Catalyst: 3 revisi, revisi 0 & 1 sudah FgActive N.
+        $header = [
+            'TransNmbr' => 'ADS-SQ/26-07/1544', 'TransDate' => '2026-07-06 00:00:00', 'Status' => 'P', 'Branch' => 'ADS',
+            'SalesType' => 'Service Renew', 'Sales' => 'EMP094', 'Customer' => 'ADS-ADSH0001', 'ContactName' => 'Ole',
+            'ContractPeriod' => 12, 'DiscForex' => 0, 'Term' => '00', 'FgDoneSOContract' => 'Y',
+            'SOContractNo' => 'ADS-AG/26-07/0096', 'BillTo' => 'ADS-ADSH0001', 'Remark' => null, 'RemarkInternal' => null,
+        ];
+        DB::table('MKTQuotationHd')->insert([
+            $header + ['Revisi' => 0, 'FgActive' => 'N', 'DoneContractPrice' => 'N', 'BaseForex' => 43200000, 'PPnForex' => 4752000, 'TotalForex' => 47952000],
+            $header + ['Revisi' => 1, 'FgActive' => 'N', 'DoneContractPrice' => null, 'BaseForex' => 64800000, 'PPnForex' => 7128000, 'TotalForex' => 71928000],
+            $header + ['Revisi' => 2, 'FgActive' => 'Y', 'DoneContractPrice' => null, 'BaseForex' => 64800000, 'PPnForex' => 7128000, 'TotalForex' => 71928000],
+        ]);
+
+        $rental = [
+            'TransNmbr' => 'ADS-SQ/26-07/1544', 'FrequencyService' => '1XM', 'QtyFree' => 0, 'OldContractNo' => '',
+            'RoomCode' => '018', 'Panjang' => 15, 'Lebar' => 10, 'Tinggi' => 4, 'QtyContract' => null,
+        ];
+        DB::table('MKTQuotationRental')->insert([
+            $rental + ['Revisi' => 0, 'Building' => 'ADS-ADSH0011', 'Product' => 'ADS05-12-200', 'QtyInstall' => 1, 'QtyTotal' => 1, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '010', 'Room' => 'Services Area 1'],
+            $rental + ['Revisi' => 1, 'Building' => 'ADS-ADSH0008', 'Product' => 'A305200', 'QtyInstall' => 1, 'QtyTotal' => 1, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '010', 'Room' => 'Services Area 1'],
+            $rental + ['Revisi' => 2, 'Building' => 'ADS-ADSH0008', 'Product' => 'A305200', 'QtyInstall' => 1, 'QtyTotal' => 1, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '010', 'Room' => 'Services Area 1'],
+            $rental + ['Revisi' => 2, 'Building' => 'ADS-ADSH0008', 'Product' => 'ADS05-12-200', 'QtyInstall' => 1, 'QtyTotal' => 0, 'PriceForex' => 0, 'AmountForex' => 0, 'FloorCode' => '011', 'Room' => 'Services Area 2'],
+            $rental + ['Revisi' => 2, 'Building' => 'ADS-ADSH0008', 'Product' => 'W300200', 'QtyInstall' => 0, 'QtyTotal' => 1, 'PriceForex' => 10800000, 'AmountForex' => 10800000, 'FloorCode' => '011', 'Room' => 'Services Area 2'],
+        ]);
+    }
+
+    public function test_quotation_uses_its_latest_revision_and_shows_contract_status(): void
+    {
+        $this->createImportMaps();
+        $this->createContractStepTables();
+        $this->createContractHeaderSource();
+        $this->createQuotationSource();
+        Schema::table('quotations', function (Blueprint $table) {
+            $table->unsignedBigInteger('prospect_id')->nullable();
+            $table->unsignedBigInteger('survey_id')->nullable();
+            $table->string('company_name')->nullable();
+            $table->date('valid_until')->nullable();
+            $table->string('status')->nullable();
+            $table->decimal('total_amount', 18, 2)->nullable();
+            $table->decimal('grand_total', 18, 2)->nullable();
+            $table->integer('top_months')->nullable();
+            $table->string('terms_of_payment')->nullable();
+        });
+
+        $this->importer()->call('quotations');
+
+        $quotation = DB::table('quotations')->where('quotation_number', 'ADS-SQ/26-07/1544')->first();
+        $this->assertSame('contract', $quotation->status, 'Dulu "expired" karena memakai revisi 0 yang FgActive N.');
+        $this->assertSame(64800000.0, (float) $quotation->total_amount);
+        $this->assertSame(71928000.0, (float) $quotation->grand_total);
+        $this->assertSame('room', $quotation->price_basis);
+    }
+
+    public function test_quotation_rental_rows_come_from_the_latest_revision_only(): void
+    {
+        $this->createQuotationSource();
+
+        $rows = $this->importer()->call('sourceQuotationRentalRows');
+
+        $this->assertCount(3, $rows);
+        $this->assertSame([2], array_values(array_unique(array_map(fn ($row) => (int) $row->Revisi, $rows))));
+    }
+
+    public function test_valid_contract_is_imported_active_with_catalyst_end_date(): void
+    {
+        $this->createImportMaps();
+        $this->createContractStepTables();
+        $this->createContractHeaderSource();
+
+        $this->importer(['ADS-AG/26-07/0096' => true])->call('contracts');
+
+        $contract = DB::table('contracts')->where('contract_number', 'ADS-AG/26-07/0096')->first();
+        $this->assertSame('active', $contract->status);
+        $this->assertSame('active', $contract->contract_status);
+        $this->assertSame(1, (int) $contract->is_posted);
+        $this->assertSame('2026-07-18', $contract->start_date);
+        // Catalyst tidak punya EndDate: TransDate + ContractPeriod bulan - 1 hari.
+        $this->assertSame('2027-07-17', $contract->end_date);
+    }
 }

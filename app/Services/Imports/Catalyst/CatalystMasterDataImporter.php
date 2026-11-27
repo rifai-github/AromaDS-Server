@@ -2966,11 +2966,19 @@ class CatalystMasterDataImporter
             return $this->sourceQuotationHeadersByNumber;
         }
 
+        // Pak Hengky 27 Nov 2026 (ADS-AG/26-07/0096 tampil "Expired"): satu SQ bisa punya beberapa
+        // baris revisi (18.186 baris / 16.586 nomor). Dulu yang dipakai baris PERTAMA = Revisi 0,
+        // yang sudah dinonaktifkan (FgActive N) begitu SQ direvisi -> status SQ jadi "expired" dan
+        // nilainya nilai revisi lama (43,2 jt, bukan 64,8 jt). Kini revisi tertinggi yang dipakai.
         $lookup = [];
         $rows = $this->source()->table('MKTQuotationHd')->whereNotNull('TransNmbr')->get();
         foreach ($rows as $row) {
             $number = $this->normalizeDocumentNumber($row->TransNmbr ?? null);
-            if ($number && !isset($lookup[$number])) {
+            if (!$number) {
+                continue;
+            }
+
+            if (!isset($lookup[$number]) || (int) ($row->Revisi ?? 0) > (int) ($lookup[$number]->Revisi ?? 0)) {
                 $lookup[$number] = $row;
             }
         }
@@ -3254,11 +3262,27 @@ class CatalystMasterDataImporter
             return $this->sourceQuotationRentalRowsCache;
         }
 
-        return $this->sourceQuotationRentalRowsCache = $this->source()
+        // Hanya baris revisi terakhir tiap SQ (lihat sourceQuotationHeadersByNumber()). Tanpa ini
+        // ruangan & rental SEMUA revisi ikut masuk ke satu SQ (ADS-SQ/26-07/1544: 20 baris dari
+        // revisi 0-2, padahal revisi 2 hanya 9).
+        $rows = $this->source()
             ->table('MKTQuotationRental')
             ->whereNotNull('TransNmbr')
             ->get()
             ->all();
+
+        $latestRevision = [];
+        foreach ($rows as $row) {
+            $number = $this->normalizeDocumentNumber($row->TransNmbr ?? null);
+            if ($number) {
+                $latestRevision[$number] = max($latestRevision[$number] ?? 0, (int) ($row->Revisi ?? 0));
+            }
+        }
+
+        return $this->sourceQuotationRentalRowsCache = array_values(array_filter(
+            $rows,
+            fn ($row) => (int) ($row->Revisi ?? 0) === ($latestRevision[$this->normalizeDocumentNumber($row->TransNmbr ?? null)] ?? 0)
+        ));
     }
 
     protected function sourceQuotationPrimaryBuildingByNumber(): array
@@ -4557,8 +4581,12 @@ class CatalystMasterDataImporter
             // membuat nilainya selalu kosong, sehingga status 'contract' tak pernah tercapai.
             $soContractNo = trim((string) $this->sourceValue($row, 'SOContractNo', 'SoContractNo'));
 
+            // SQ yang sudah jadi kontrak: SOContractNo terisi / FgDoneSOContract = Y (10.300 SQ).
+            // DoneContractPrice hampir selalu N/NULL, jadi syarat lama nyaris tak pernah terpenuhi.
+            $doneSoContract = $this->yesNoToBool($this->sourceValue($row, 'FgDoneSOContract'), false);
+
             $status = 'draft';
-            if ($statusRaw === 'P' && $doneContract && $soContractNo) $status = 'contract';
+            if ($statusRaw === 'P' && ($soContractNo !== '' || $doneSoContract || $doneContract)) $status = 'contract';
             elseif ($statusRaw === 'P' && $fgActive) $status = 'approved';
             elseif ($statusRaw === 'X' || !$fgActive) $status = 'expired';
 
