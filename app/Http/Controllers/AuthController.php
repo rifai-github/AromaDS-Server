@@ -462,7 +462,13 @@ class AuthController extends Controller
         if ($user->hasPermission('system.admin.view')) {
             return route('dashboard');
         }
-        
+
+        // Audit Master Role 27 Nov 2026: role yang sengaja diberi "Dashboard Utama" mendarat di
+        // /dashboard, bukan di dashboard modul.
+        if ($user->hasPermission(\App\Http\Controllers\DashboardController::PERMISSION)) {
+            return route('dashboard');
+        }
+
         if ($user->hasPermission('marketing.dashboard.view')) {
             return route('marketing.dashboard');
         }

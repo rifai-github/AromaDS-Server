@@ -1291,7 +1291,11 @@
                 $roleLower = strtolower($roleName ?? '');
                 $isAdminOrManagement = $user->hasRole('Admin') || $user->hasRole('super_admin') || $user->hasRoleStartingWith('Management');
                 $isMarketing = !$isAdminOrManagement && $user->hasPermission('marketing.dashboard');
-                $dashboardRoute = $isMarketing ? route('marketing.dashboard') : route('dashboard');
+                // Audit 27 Nov 2026: role yang diberi Dashboard Utama dibawa ke /dashboard walau juga punya
+                // dashboard marketing; selain itu tetap ke dashboard marketing.
+                $dashboardRoute = (! $isAdminOrManagement && $user->hasPermission(\App\Http\Controllers\DashboardController::PERMISSION)) || ! $isMarketing
+                    ? route('dashboard')
+                    : route('marketing.dashboard');
                 // QA 26 Nov 2026: Dashboard utama hanya untuk Admin/Management atau role yang
                 // diberi izin "Dashboard" di Master Role; user Marketing tetap ke dashboard marketing.
                 $showDashboardMenu = $isMarketing || \App\Http\Controllers\DashboardController::canView($user);
@@ -1339,7 +1343,8 @@
                 @if(auth()->user()->canAccessMenuItem('marketing.dashboard'))
                 <li data-tooltip="Dashboard" class="{{ request()->routeIs('marketing.dashboard') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.dashboard') }}')">Dashboard</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('marketing.commissions.dashboard'))
+                {{-- Audit 27 Nov 2026: Master Role menyimpan izin ini sebagai marketing.commissions-dashboard.* --}}
+                @if(auth()->user()->canAccessMenuItem('marketing.commissions.dashboard') || auth()->user()->canAccessMenuItem('marketing.commissions-dashboard'))
                 <li data-tooltip="Commission Dashboard" class="{{ request()->routeIs('marketing.commissions.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('marketing.commissions.dashboard') }}')">Commission Dashboard</li>
                 @endif
                 <li class="menu-divider"></li>
@@ -1408,6 +1413,7 @@
             @if(auth()->user()->canAccessMenuItem('operational.job-schedules')
                 || auth()->user()->canAccessMenuItem('operational.job-assign-material-issues')
                 || auth()->user()->canAccessMenuItem('operational.master-team')
+                || auth()->user()->canAccessMenuItem('operational.teams')
                 || auth()->user()->canAccessMenuItem('operational.master-rooms'))
             @php
                 // Routes that are actually in Operational menu (exclude buildings which moved to Marketing)
@@ -1447,7 +1453,8 @@
                 @if(auth()->user()->canAccessMenuItem('operational.job-assign-material-issues'))
                 <li data-tooltip="Material Assign" class="{{ request()->routeIs('operational.job-assign-material-issues.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.job-assign-material-issues.index') }}')">Material Assign</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('operational.master-team'))
+                {{-- Audit 27 Nov 2026: Master Role punya dua baris "Master Team" (operational.master-team.* dan operational.teams.*) --}}
+                @if(auth()->user()->canAccessMenuItem('operational.master-team') || auth()->user()->canAccessMenuItem('operational.teams'))
                 <li data-tooltip="Master Team" class="{{ request()->routeIs('operational.teams.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('operational.teams.index') }}')">Master Team</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('operational.master-rooms'))
@@ -1589,7 +1596,10 @@
                 {{-- @if(auth()->user()->canAccessMenuItem('warehouse.product-types'))
                 <li data-tooltip="Product Type" class="{{ request()->routeIs('warehouse.product-types.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.product-types.index') }}')">Product Type</li>
                 @endif --}}
+                {{-- Audit 27 Nov 2026: dulu tampil untuk semua user gudang padahal route butuh warehouse.variant.view --}}
+                @if(auth()->user()->canAccessMenuItem('warehouse.variant'))
                 <li data-tooltip="Brand Variant" class="{{ request()->routeIs('warehouse.brand-variants.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('warehouse.brand-variants.index') }}')">Brand Variant</li>
+                @endif
                 
                 <!-- 2. PRODUCT MANAGEMENT -->
                 <li class="menu-divider"></li>
@@ -1674,6 +1684,7 @@
                                    auth()->user()->canAccessMenuItem('company.master-options') ||
                                    auth()->user()->canAccessMenuItem('system.departments') ||
                                    auth()->user()->canAccessMenuItem('system.salutations') ||
+                                   auth()->user()->canAccessMenuItem('marketing.salutations') ||
                                    auth()->user()->canAccessMenuItem('company.company-virtual-accounts') ||
                                    auth()->user()->canAccessMenuItem('marketing.company-virtual-accounts');
                                    
@@ -1704,7 +1715,8 @@
                 @if(auth()->user()->canAccessMenuItem('company.positions'))
                 <li data-tooltip="Master Position" class="{{ request()->routeIs('system.positions.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.positions.index') }}')">Master Position</li>
                 @endif
-                @if(auth()->user()->canAccessMenuItem('system.salutations'))
+                {{-- Audit 27 Nov 2026: role Marketing memegang marketing.salutations.* (baris "Master Salutation" di Master Role) --}}
+                @if(auth()->user()->canAccessMenuItem('system.salutations') || auth()->user()->canAccessMenuItem('marketing.salutations'))
                 <li data-tooltip="Master Salutation" class="{{ request()->routeIs('system.salutations.*') ? 'active' : '' }}" onclick="navigateTo('{{ route('system.salutations.index') }}')">Master Salutation</li>
                 @endif
                 @if(auth()->user()->canAccessMenuItem('company.master-options'))

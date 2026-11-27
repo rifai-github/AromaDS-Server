@@ -24,47 +24,11 @@ class CheckPermission
 
         $user = Auth::user();
 
-        // Admin and Management roles bypass all permission checks
-        // Check multiple ways to ensure compatibility with both relationship and column-based roles
-        
-        // Method 1: Check using helper methods
-        $isAdmin = $user->hasRole('Admin') || $user->hasRole('super_admin');
-        $isManagement = $user->hasRoleStartingWith('Management');
-        
-        if ($isAdmin || $isManagement) {
+        // Admin sistem & Management melewati semua cek. Nama role dicocokkan persis
+        // (User::bypassesPermissionChecks); dulu role apa pun yang namanya MENGANDUNG "admin"
+        // (mis. "Admin Cabang", "Marketing Admin") ikut lolos — Audit Master Role 27 Nov 2026.
+        if ($user->bypassesPermissionChecks()) {
             return $next($request);
-        }
-        
-        // Method 2: Direct check from relationship (user_roles)
-        $userRole = $user->roles()->first();
-        if ($userRole) {
-            $roleName = strtolower($userRole->name);
-            if (strpos($roleName, 'admin') !== false || 
-                strpos($roleName, 'super_admin') !== false || 
-                strpos($roleName, 'management') === 0) {
-                return $next($request);
-            }
-        }
-        
-        // Method 3: Fallback to database column (for backward compatibility)
-        $rolesColumn = $user->getAttributes()['roles'] ?? null;
-        if ($rolesColumn && is_string($rolesColumn)) {
-            $roleNameLower = strtolower($rolesColumn);
-            // Check if it's JSON
-            $decoded = json_decode($rolesColumn, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                // If JSON, check first role name
-                $firstRole = $decoded[0]['name'] ?? $decoded['name'] ?? null;
-                if ($firstRole) {
-                    $roleNameLower = strtolower($firstRole);
-                }
-            }
-            
-            if (strpos($roleNameLower, 'admin') !== false || 
-                strpos($roleNameLower, 'super_admin') !== false || 
-                strpos($roleNameLower, 'management') === 0) {
-                return $next($request);
-            }
         }
 
         if (!$user->hasAnyPermission($permissions)) {

@@ -557,6 +557,11 @@ class User extends Authenticatable
 
     public function hasPermission($permission)
     {
+        // "modul.menu.*" = izin apa pun di menu tersebut (dipakai middleware permission:...*).
+        if (is_string($permission) && str_ends_with($permission, '.*')) {
+            return $this->hasPermissionPrefix(substr($permission, 0, -2));
+        }
+
         $permissionLookup = $this->getResolvedPermissionLookup();
 
         foreach ($this->expandPermissionCandidates($permission) as $candidate) {
@@ -1116,7 +1121,89 @@ class User extends Authenticatable
             $candidates[] = str_replace('marketing.customers.', 'company.customers.', $permission);
         }
 
+        // Audit Master Role 27 Nov 2026: Master Role hanya punya kolom View/Create/Update/Delete/
+        // Approve/Download/Print. Izin aksi khusus (mis. "operational.job-schedules.approve-ba",
+        // "system.backup-restore.import") hanya bisa dicentang lewat kolom View, sehingga yang
+        // tersimpan "<izin>.view". Anggap keduanya sama supaya centang di Master Role benar-benar
+        // berlaku.
+        $lastSegment = strtolower((string) substr(strrchr('.'.$permission, '.'), 1));
+        if (str_contains($permission, '.') && ! in_array($lastSegment, self::STANDARD_PERMISSION_ACTIONS, true)) {
+            $candidates[] = $permission.'.view';
+        }
+
+        // CATATAN: baris "Job Schedule (Suspend/DPF/...)" sengaja TIDAK diberi alias .view -> .update
+        // (OperationalViewOnlyActionPermissionTest, 486fb558: centang View = hanya lihat). Aksi itu
+        // tetap terbuka lewat operational.job-schedules.update. Lihat laporan audit 27 Nov 2026.
+
+        // Izin "hantu" buatan Master Role versi lama: nama modul tampilan (report/marketing/...)
+        // ditempel di depan nama izin aslinya, mis. modul "report" + izin reports.warehouse(.view).
+        // (Nama lengkap hantu sengaja tidak ditulis di sini: permissions:cleanup-ghosts memindai kode
+        // dan akan menganggapnya "dipakai".)
+        foreach ($candidates as $candidate) {
+            foreach (self::MASTER_ROLE_UI_MODULES as $module) {
+                if (! str_starts_with($candidate, $module.'.')) {
+                    $candidates[] = $module.'.'.$candidate;
+                }
+            }
+        }
+
         return array_values(array_unique($candidates));
+    }
+
+    /** Aksi standar (kolom Master Role) — izin yang berakhiran ini tidak diberi alias ".view". */
+    public const STANDARD_PERMISSION_ACTIONS = [
+        'view', 'create', 'update', 'edit', 'delete', 'approve', 'download', 'print',
+        'read', 'show', 'add', 'remove', 'write',
+    ];
+
+    /** Nama modul yang dipakai Master Role saat (dulu) membuat izin baru dari centang. */
+    public const MASTER_ROLE_UI_MODULES = ['marketing', 'operational', 'finance', 'warehouse', 'company', 'system', 'report'];
+
+    /**
+     * Admin sistem & Management melewati semua cek izin (CheckPermission, CheckRole,
+     * CheckModuleAccess). Nama role dicocokkan PERSIS (tanpa beda huruf besar/kecil):
+     * dulu cukup "mengandung kata admin", sehingga role "Admin Cabang" dan "Marketing Admin"
+     * ikut lolos semua cek izin di route padahal menu sidebar-nya tetap tertutup.
+     */
+    public function bypassesPermissionChecks(): bool
+    {
+        foreach ($this->getResolvedRoleNames() as $roleName) {
+            $lower = strtolower(trim((string) $roleName));
+            if (in_array($lower, ['admin', 'super_admin', 'super admin'], true) || str_starts_with($lower, 'management')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** True bila user punya izin apa pun di keluarga $prefix ($prefix sendiri atau "$prefix.*"). */
+    public function hasPermissionPrefix(string $prefix): bool
+    {
+        $prefix = rtrim($prefix, '.*');
+        if ($prefix === '') {
+            return false;
+        }
+
+        $prefixes = [$prefix];
+        foreach (self::MASTER_ROLE_UI_MODULES as $module) {
+            if (! str_starts_with($prefix, $module.'.')) {
+                $prefixes[] = $module.'.'.$prefix;
+            }
+        }
+        if (str_starts_with($prefix, 'company.customers')) {
+            $prefixes[] = 'marketing.'.$prefix;
+        }
+
+        foreach (array_keys($this->getResolvedPermissionLookup()) as $name) {
+            foreach ($prefixes as $candidate) {
+                if ($name === $candidate || str_starts_with($name, $candidate.'.')) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     public function hasEffectivePermissionWithPosition($permission)

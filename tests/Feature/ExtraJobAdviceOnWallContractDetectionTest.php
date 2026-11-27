@@ -13,6 +13,14 @@ class ExtraJobAdviceOnWallContractDetectionTest extends TestCase
     {
         parent::setUp();
 
+        // Audit Master Role 27 Nov 2026: endpoint /api/contracts/... kini wajib login (dulu publik).
+        $this->actingAs((new \App\Models\User)->forceFill(['id' => 1, 'name' => 'Tester', 'is_active' => true]));
+        $this->withoutMiddleware([
+            \App\Http\Middleware\CheckFrozenAccount::class,
+            \App\Http\Middleware\CheckMultiLogin::class,
+            \App\Http\Middleware\CheckLoginRestriction::class,
+        ]);
+
         Schema::create('customers', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();

@@ -149,6 +149,9 @@ Route::get('/csrf-token', function () {
 })->name('csrf-token');
 
 // Public API Routes (no authentication required)
+// Audit Master Role 27 Nov 2026: route /api/... di bawah ini dulu terbuka TANPA login (termasuk
+// simpan/ubah/hapus Inventory Issuing & Receiving). Sekarang wajib login; tulis/detail juga butuh
+// izin menu gudangnya. Hanya halaman tanda tangan kontrak & verifikasi email yang tetap publik.
 Route::get('/email/verify/{token}', [App\Http\Controllers\Company\CustomerContactController::class, 'verifyEmail'])->name('email.verify');
 
 // MOM 19 Nov 2026 p4 no 8: Digital Sign kontrak - halaman penandatangan (akses via token).
@@ -158,13 +161,13 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::get('/sign/contract/{token}/document', [App\Http\Controllers\PublicContractSignatureController::class, 'document'])->name('contract-signatures.public.document');
     Route::post('/sign/contract/{token}', [App\Http\Controllers\PublicContractSignatureController::class, 'sign'])->name('contract-signatures.public.sign');
 });
-Route::get('/api/contracts/dropdown', [ContractController::class, 'getForDropdown'])->name('api.contracts.dropdown');
-Route::get('/api/contracts/on-wall-units-for-job-advice', [ContractController::class, 'getOnWallUnitsForJobAdvice'])->name('api.contracts.on-wall-units-for-job-advice');
-Route::get('/api/quotations/dropdown', [App\Http\Controllers\Marketing\QuotationController::class, 'getForDropdown'])->name('api.quotations.dropdown');
-Route::get('/api/contracts/{id}/for-job-advice', [ContractController::class, 'getForJobAdvice'])->name('api.contracts.for-job-advice');
-Route::get('/api/quotations/{id}/for-job-advice', [App\Http\Controllers\Marketing\QuotationController::class, 'getForJobAdvice'])->name('api.quotations.for-job-advice');
-Route::get('/api/buildings', [App\Http\Controllers\Operational\BuildingController::class, 'index'])->name('api.buildings.public');
-Route::get('/api/master-rentals', [App\Http\Controllers\Warehouse\MasterRentalController::class, 'index'])->name('api.master-rentals.public');
+Route::get('/api/contracts/dropdown', [ContractController::class, 'getForDropdown'])->name('api.contracts.dropdown')->middleware('auth');
+Route::get('/api/contracts/on-wall-units-for-job-advice', [ContractController::class, 'getOnWallUnitsForJobAdvice'])->name('api.contracts.on-wall-units-for-job-advice')->middleware('auth');
+Route::get('/api/quotations/dropdown', [App\Http\Controllers\Marketing\QuotationController::class, 'getForDropdown'])->name('api.quotations.dropdown')->middleware('auth');
+Route::get('/api/contracts/{id}/for-job-advice', [ContractController::class, 'getForJobAdvice'])->name('api.contracts.for-job-advice')->middleware('auth');
+Route::get('/api/quotations/{id}/for-job-advice', [App\Http\Controllers\Marketing\QuotationController::class, 'getForJobAdvice'])->name('api.quotations.for-job-advice')->middleware('auth');
+Route::get('/api/buildings', [App\Http\Controllers\Operational\BuildingController::class, 'index'])->name('api.buildings.public')->middleware('auth');
+Route::get('/api/master-rentals', [App\Http\Controllers\Warehouse\MasterRentalController::class, 'index'])->name('api.master-rentals.public')->middleware('auth');
 Route::get('/warehouse/rental-products/dropdown', function () {
     try {
         $rentals = \App\Models\MasterRental::select('id', 'rental_name', 'rental_code', 'monthly_price', 'unit')
@@ -178,33 +181,33 @@ Route::get('/warehouse/rental-products/dropdown', function () {
 
         return response()->json(['status' => 'error', 'message' => $e->getMessage(), 'data' => []], 500);
     }
-})->name('warehouse.rental-products.dropdown');
+})->name('warehouse.rental-products.dropdown')->middleware('auth');
 
 // API Routes for dynamic loading
-Route::get('/api/buildings/{buildingId}/rooms', [App\Http\Controllers\Operational\BuildingController::class, 'getRooms'])->name('api.buildings.rooms');
-Route::get('/api/customers/{customerId}/buildings', [App\Http\Controllers\Company\CustomerController::class, 'getBuildings'])->name('web.api.customers.buildings');
+Route::get('/api/buildings/{buildingId}/rooms', [App\Http\Controllers\Operational\BuildingController::class, 'getRooms'])->name('api.buildings.rooms')->middleware('auth');
+Route::get('/api/customers/{customerId}/buildings', [App\Http\Controllers\Company\CustomerController::class, 'getBuildings'])->name('web.api.customers.buildings')->middleware('auth');
 
 // Modal data routes (no auth required for AJAX calls)
-Route::get('/warehouse/inventory-receivings/modal-data', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'getModalData'])->name('inventory-receivings.modal-data-public');
+Route::get('/warehouse/inventory-receivings/modal-data', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'getModalData'])->name('inventory-receivings.modal-data-public')->middleware('auth');
 
 // Alternative route for modal data (no auth required)
-Route::get('/api/warehouse/inventory-receivings/modal-data', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'getModalData'])->name('api.inventory-receivings.modal-data');
-Route::get('/api/warehouse/inventory-receivings/{id}', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'show'])->name('api.inventory-receivings.show');
-Route::get('/api/warehouse/inventory-receivings/{id}/edit', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'edit'])->name('api.inventory-receivings.edit');
-Route::post('/api/warehouse/inventory-receivings', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'store'])->name('api.inventory-receivings.store');
-Route::put('/api/warehouse/inventory-receivings/{id}', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'update'])->name('api.inventory-receivings.update');
-Route::post('/api/warehouse/inventory-receivings/bulk-delete', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'bulkDelete'])->name('api.inventory-receivings.bulk-delete');
+Route::get('/api/warehouse/inventory-receivings/modal-data', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'getModalData'])->name('api.inventory-receivings.modal-data')->middleware('auth');
+Route::get('/api/warehouse/inventory-receivings/{id}', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'show'])->name('api.inventory-receivings.show')->middleware(['auth', 'permission:warehouse.inventory-receivings.*']);
+Route::get('/api/warehouse/inventory-receivings/{id}/edit', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'edit'])->name('api.inventory-receivings.edit')->middleware(['auth', 'permission:warehouse.inventory-receivings.*']);
+Route::post('/api/warehouse/inventory-receivings', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'store'])->name('api.inventory-receivings.store')->middleware(['auth', 'permission:warehouse.inventory-receivings.*']);
+Route::put('/api/warehouse/inventory-receivings/{id}', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'update'])->name('api.inventory-receivings.update')->middleware(['auth', 'permission:warehouse.inventory-receivings.*']);
+Route::post('/api/warehouse/inventory-receivings/bulk-delete', [\App\Http\Controllers\Warehouse\InventoryReceivingController::class, 'bulkDelete'])->name('api.inventory-receivings.bulk-delete')->middleware(['auth', 'permission:warehouse.inventory-receivings.*']);
 
-Route::get('/api/warehouse/inventory-issuings/modal-data', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getModalData'])->name('api.inventory-issuings.modal-data');
-Route::get('/api/warehouse/inventory-issuings/{id}', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'show'])->name('api.inventory-issuings.show');
-Route::get('/api/warehouse/inventory-issuings/{id}/edit', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'edit'])->name('api.inventory-issuings.edit');
-Route::get('/api/warehouse/inventory-issuings/{id}/details', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getIssuingDetails'])->name('api.inventory-issuings.details');
-Route::post('/api/warehouse/inventory-issuings', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'store'])->name('api.inventory-issuings.store');
-Route::put('/api/warehouse/inventory-issuings/{id}', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'update'])->name('api.inventory-issuings.update');
-Route::post('/api/warehouse/inventory-issuings/bulk-delete', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'bulkDelete'])->name('api.inventory-issuings.bulk-delete');
+Route::get('/api/warehouse/inventory-issuings/modal-data', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getModalData'])->name('api.inventory-issuings.modal-data')->middleware('auth');
+Route::get('/api/warehouse/inventory-issuings/{id}', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'show'])->name('api.inventory-issuings.show')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
+Route::get('/api/warehouse/inventory-issuings/{id}/edit', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'edit'])->name('api.inventory-issuings.edit')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
+Route::get('/api/warehouse/inventory-issuings/{id}/details', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'getIssuingDetails'])->name('api.inventory-issuings.details')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
+Route::post('/api/warehouse/inventory-issuings', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'store'])->name('api.inventory-issuings.store')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
+Route::put('/api/warehouse/inventory-issuings/{id}', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'update'])->name('api.inventory-issuings.update')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
+Route::post('/api/warehouse/inventory-issuings/bulk-delete', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'bulkDelete'])->name('api.inventory-issuings.bulk-delete')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
 
 // Print Receipt route
-Route::get('/warehouse/inventory-issuings/{id}/print-receipt', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'printReceipt'])->name('warehouse.inventory-issuings.print-receipt');
+Route::get('/warehouse/inventory-issuings/{id}/print-receipt', [\App\Http\Controllers\Warehouse\InventoryIssuingController::class, 'printReceipt'])->name('warehouse.inventory-issuings.print-receipt')->middleware(['auth', 'permission:warehouse.inventory-issuings.*']);
 
 // Products API route
 Route::get('/api/products', function () {
@@ -223,11 +226,11 @@ Route::get('/api/products', function () {
         'status' => 'success',
         'data' => $products,
     ]);
-})->name('api.products');
+})->name('api.products')->middleware('auth');
 
 // Debug route - for troubleshooting inventory transfer data access
-// Only works in development environment
-Route::get('debug-transfer/{id}', function ($id) {
+// Audit 27 Nov 2026: dulu terbuka tanpa login (siapa pun bisa membaca data transfer).
+Route::middleware(['auth', 'permission:warehouse.inventory-transfers.*'])->get('debug-transfer/{id}', function ($id) {
     try {
         $transfer = App\Models\InventoryTransfer::find($id);
         if (! $transfer) {
@@ -455,7 +458,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
             Route::get('/', [QuotationApprovalLevelController::class, 'index'])->name('index')->middleware('permission:marketing.quotation-approval-levels.view');
             Route::post('/', [QuotationApprovalLevelController::class, 'store'])->name('store')->middleware('permission:marketing.quotation-approval-levels.create');
             Route::get('/{quotationApprovalLevel}/impact', [QuotationApprovalLevelController::class, 'impact'])->name('impact')->middleware('permission:marketing.quotation-approval-levels.view');
-            Route::put('/{quotationApprovalLevel}', [QuotationApprovalLevelController::class, 'update'])->name('update')->middleware('permission:marketing.quotation-approval-levels.edit');
+            Route::put('/{quotationApprovalLevel}', [QuotationApprovalLevelController::class, 'update'])->name('update')->middleware('permission:marketing.quotation-approval-levels.edit,marketing.quotation-approval-levels.update');
             Route::delete('/{quotationApprovalLevel}', [QuotationApprovalLevelController::class, 'destroy'])->name('destroy')->middleware('permission:marketing.quotation-approval-levels.delete');
         });
 
@@ -869,8 +872,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/unissue', [JobAssignMaterialIssueController::class, 'unissue'])->name('job-assign-material-issues.unissue')->middleware('permission:operational.job-assign-material-issues.update');
         Route::post('job-assign-material-issues/bulk-unissue', [JobAssignMaterialIssueController::class, 'bulkUnissue'])->name('job-assign-material-issues.bulk-unissue')->middleware('permission:operational.job-assign-material-issues.update');
         Route::get('job-assign-material-issues/job-assign-schedule/{id}/details', [JobAssignMaterialIssueController::class, 'getJobAssignScheduleDetails'])->name('job-assign-material-issues.job-assign-schedule.details');
-        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/request-variant-change', [JobAssignMaterialIssueController::class, 'requestVariantChange'])->name('job-assign-material-issues.request-variant-change');
-        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve-variant-change', [JobAssignMaterialIssueController::class, 'approveVariantChange'])->name('job-assign-material-issues.approve-variant-change');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/request-variant-change', [JobAssignMaterialIssueController::class, 'requestVariantChange'])->name('job-assign-material-issues.request-variant-change')->middleware('permission:operational.job-assign-material-issues.update');
+        Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/approve-variant-change', [JobAssignMaterialIssueController::class, 'approveVariantChange'])->name('job-assign-material-issues.approve-variant-change')->middleware('permission:operational.job-assign-material-issues.approve,operational.job-assign-material-issues.update');
         Route::get('job-assign-material-issues/{jobAssignMaterialIssue}/pending-variant-changes', [JobAssignMaterialIssueController::class, 'getPendingVariantChanges'])->name('job-assign-material-issues.pending-variant-changes');
         Route::get('job-assign-material-issues/{jobAssignMaterialIssue}/warehouse-options', [JobAssignMaterialIssueController::class, 'warehouseOptions'])->name('job-assign-material-issues.warehouse-options')->middleware('permission:operational.job-assign-material-issues.view');
         Route::post('job-assign-material-issues/{jobAssignMaterialIssue}/change-warehouse', [JobAssignMaterialIssueController::class, 'changeWarehouse'])->name('job-assign-material-issues.change-warehouse')->middleware('permission:operational.job-assign-material-issues.update');
@@ -923,12 +926,12 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('invoices/regeneration-contracts', [InvoiceController::class, 'getRegenerationContracts'])->name('invoices.regeneration-contracts')->middleware('permission:finance.invoices.view');
         Route::resource('invoices', InvoiceController::class)->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/email', [InvoiceController::class, 'emailInvoice'])->name('finance.invoices.email')->middleware('permission:finance.invoices.update');
-        Route::post('invoices/{invoice}/rental-details/{rentalDetail}/update-price', [InvoiceController::class, 'updateRentalPrice'])->name('finance.invoices.update-rental-price');
-        Route::post('invoices/{invoice}/update-discount', [InvoiceController::class, 'updateDiscount'])->name('finance.invoices.update-discount');
-        Route::post('invoices/{invoice}/rental-details/{rentalDetail}/discount', [InvoiceController::class, 'updateRentalDiscount'])->name('finance.invoices.rental-details.discount');
+        Route::post('invoices/{invoice}/rental-details/{rentalDetail}/update-price', [InvoiceController::class, 'updateRentalPrice'])->name('finance.invoices.update-rental-price')->middleware('permission:finance.invoices.update');
+        Route::post('invoices/{invoice}/update-discount', [InvoiceController::class, 'updateDiscount'])->name('finance.invoices.update-discount')->middleware('permission:finance.invoices.update');
+        Route::post('invoices/{invoice}/rental-details/{rentalDetail}/discount', [InvoiceController::class, 'updateRentalDiscount'])->name('finance.invoices.rental-details.discount')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/recalculate', [InvoiceController::class, 'recalculate'])->name('finance.invoices.recalculate')->middleware('permission:finance.invoices.update');
-        Route::post('invoices/{invoice}/update-notes', [InvoiceController::class, 'updateNotes'])->name('finance.invoices.update-notes');
-        Route::post('invoices/{invoice}/update-internal-notes', [InvoiceController::class, 'updateInternalNotes'])->name('finance.invoices.update-internal-notes');
+        Route::post('invoices/{invoice}/update-notes', [InvoiceController::class, 'updateNotes'])->name('finance.invoices.update-notes')->middleware('permission:finance.invoices.update');
+        Route::post('invoices/{invoice}/update-internal-notes', [InvoiceController::class, 'updateInternalNotes'])->name('finance.invoices.update-internal-notes')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/send', [InvoiceController::class, 'send'])->name('invoices.send')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/mark-paid', [InvoiceController::class, 'markPaid'])->name('invoices.mark-paid')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel')->middleware('permission:finance.invoices.update');
@@ -939,7 +942,7 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/auto-generate', [InvoiceController::class, 'autoGenerateInvoice'])->name('invoices.auto-generate')->middleware('permission:finance.invoices.create');
         Route::post('invoices/{invoice}/update-delivery', [InvoiceController::class, 'updateDeliveryInfo'])->name('invoices.update-delivery')->middleware('permission:finance.invoices.update');
         Route::post('invoices/{invoice}/cancel-faktur', [InvoiceController::class, 'cancelFakturPajak'])->name('invoices.cancel-faktur')->middleware('permission:finance.invoices.update');
-        Route::post('invoices/{invoice}/upload', [InvoiceController::class, 'uploadFile'])->name('invoices.upload');
+        Route::post('invoices/{invoice}/upload', [InvoiceController::class, 'uploadFile'])->name('invoices.upload')->middleware('permission:finance.invoices.update');
         Route::get('invoices/files/download-attachment', [InvoiceController::class, 'downloadFile'])->name('invoices.download-attachment');
         Route::match(['get', 'post'], 'invoices/{invoice}/download-combined', [InvoiceController::class, 'downloadCombined'])->name('invoices.download-combined')->middleware('permission:finance.invoices.view');
         Route::post('invoices/{invoice}/approve', [InvoiceController::class, 'approve'])->name('invoices.approve')->middleware('permission:finance.invoices.update');
@@ -953,11 +956,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('invoices/auto-generate-rental-period', [InvoiceController::class, 'autoGenerateInvoiceForRentalPeriod'])->name('invoices.auto-generate-rental-period')->middleware('permission:finance.invoices.create');
         Route::get('invoices/rental-periods/{contractId}', [InvoiceController::class, 'getRentalPeriods'])->name('invoices.rental-periods')->middleware('permission:finance.invoices.view');
         Route::post('invoices/generate-multiple-periods', [InvoiceController::class, 'generateInvoicesForMultiplePeriods'])->name('invoices.generate-multiple-periods')->middleware('permission:finance.invoices.create');
-        Route::resource('invoice-follow-ups', InvoiceFollowUpController::class)->middleware('permission:invoice-follow-ups.view');
-        Route::post('invoice-follow-ups/bulk-delete', [InvoiceFollowUpController::class, 'bulkDelete'])->name('invoice-follow-ups.bulk-delete')->middleware('permission:invoice-follow-ups.delete');
-        Route::get('invoice-follow-ups/invoice/{invoiceId}', [InvoiceFollowUpController::class, 'getInvoiceFollowUps'])->name('invoice-follow-ups.get-by-invoice')->middleware('permission:invoice-follow-ups.view');
-        Route::get('invoice-follow-ups/create-for-invoice/{invoiceId}', [InvoiceFollowUpController::class, 'createForInvoice'])->name('invoice-follow-ups.create-for-invoice')->middleware('permission:invoice-follow-ups.create');
-        Route::post('invoice-follow-ups/store-for-invoice/{invoiceId}', [InvoiceFollowUpController::class, 'storeForInvoice'])->name('invoice-follow-ups.store-for-invoice')->middleware('permission:invoice-follow-ups.create');
+        Route::resource('invoice-follow-ups', InvoiceFollowUpController::class)->middleware('permission:invoice-follow-ups.view,finance.invoice-follow-ups.view');
+        Route::post('invoice-follow-ups/bulk-delete', [InvoiceFollowUpController::class, 'bulkDelete'])->name('invoice-follow-ups.bulk-delete')->middleware('permission:invoice-follow-ups.delete,finance.invoice-follow-ups.delete');
+        Route::get('invoice-follow-ups/invoice/{invoiceId}', [InvoiceFollowUpController::class, 'getInvoiceFollowUps'])->name('invoice-follow-ups.get-by-invoice')->middleware('permission:invoice-follow-ups.view,finance.invoice-follow-ups.view');
+        Route::get('invoice-follow-ups/create-for-invoice/{invoiceId}', [InvoiceFollowUpController::class, 'createForInvoice'])->name('invoice-follow-ups.create-for-invoice')->middleware('permission:invoice-follow-ups.create,finance.invoice-follow-ups.create');
+        Route::post('invoice-follow-ups/store-for-invoice/{invoiceId}', [InvoiceFollowUpController::class, 'storeForInvoice'])->name('invoice-follow-ups.store-for-invoice')->middleware('permission:invoice-follow-ups.create,finance.invoice-follow-ups.create');
 
         // Invoice Forms routes
         Route::resource('invoice-forms', InvoiceFormController::class)->middleware('permission:finance.invoice-forms.view');
@@ -976,8 +979,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('bank-receipts/{bankReceipt}/process', [BankReceiptController::class, 'process'])->name('bank-receipts.process')->middleware('permission:finance.bank-receipts.update');
         Route::post('bank-receipts/bulk-verify', [BankReceiptController::class, 'bulkVerify'])->name('bank-receipts.bulk-verify')->middleware('permission:finance.bank-receipts.update');
         Route::post('bank-receipts/bulk-delete', [BankReceiptController::class, 'bulkDelete'])->name('bank-receipts.bulk-delete')->middleware('permission:finance.bank-receipts.delete');
-        Route::get('bank-receipts/export', [BankReceiptController::class, 'export'])->name('bank-receipts.export')->middleware('permission:bank-receipts.view');
-        Route::get('bank-receipts/statistics', [BankReceiptController::class, 'statistics'])->name('bank-receipts.statistics')->middleware('permission:bank-receipts.view');
+        Route::get('bank-receipts/export', [BankReceiptController::class, 'export'])->name('bank-receipts.export')->middleware('permission:bank-receipts.view,finance.bank-receipts.view');
+        Route::get('bank-receipts/statistics', [BankReceiptController::class, 'statistics'])->name('bank-receipts.statistics')->middleware('permission:bank-receipts.view,finance.bank-receipts.view');
 
         // Virtual Account Imports with additional routes
         Route::resource('virtual-account-imports', VirtualAccountImportController::class);
@@ -1006,19 +1009,19 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('virtual-account-exports/summary-by-status', [VirtualAccountExportController::class, 'summaryByStatus'])->name('virtual-account-exports.summary-by-status');
         Route::get('virtual-account-exports/summary-by-bank', [VirtualAccountExportController::class, 'summaryByBank'])->name('virtual-account-exports.summary-by-bank');
         Route::get('virtual-account-exports/{virtualAccountExport}/download', [VirtualAccountExportController::class, 'download'])->name('virtual-account-exports.download');
-        Route::resource('tax-settings', TaxSettingController::class)->middleware('permission:tax-settings.view');
+        Route::resource('tax-settings', TaxSettingController::class)->middleware('permission:tax-settings.view,finance.tax-settings.view');
         Route::get('tax-codes', [TaxCodeController::class, 'index'])->name('tax-codes.index')->middleware('permission:finance.tax-codes.view');
-        Route::put('tax-codes/{taxCode}', [TaxCodeController::class, 'update'])->name('tax-codes.update')->middleware('permission:finance.tax-codes.edit');
-        Route::post('tax-settings/{taxSetting}/activate', [TaxSettingController::class, 'activate'])->name('tax-settings.activate')->middleware('permission:tax-settings.edit');
-        Route::post('tax-settings/{taxSetting}/deactivate', [TaxSettingController::class, 'deactivate'])->name('tax-settings.deactivate')->middleware('permission:tax-settings.edit');
-        Route::post('tax-settings/bulk-activate', [TaxSettingController::class, 'bulkActivate'])->name('tax-settings.bulk-activate')->middleware('permission:tax-settings.edit');
-        Route::post('tax-settings/bulk-deactivate', [TaxSettingController::class, 'bulkDeactivate'])->name('tax-settings.bulk-deactivate')->middleware('permission:tax-settings.edit');
-        Route::post('tax-settings/bulk-delete', [TaxSettingController::class, 'bulkDelete'])->name('tax-settings.bulk-delete')->middleware('permission:tax-settings.delete');
-        Route::get('tax-settings/export', [TaxSettingController::class, 'export'])->name('tax-settings.export')->middleware('permission:tax-settings.view');
-        Route::get('tax-settings/statistics', [TaxSettingController::class, 'statistics'])->name('tax-settings.statistics')->middleware('permission:tax-settings.view');
-        Route::get('tax-settings/trends', [TaxSettingController::class, 'trends'])->name('tax-settings.trends')->middleware('permission:tax-settings.view');
-        Route::get('tax-settings/summary-by-type', [TaxSettingController::class, 'summaryByType'])->name('tax-settings.summary-by-type')->middleware('permission:tax-settings.view');
-        Route::get('tax-settings/summary-by-status', [TaxSettingController::class, 'summaryByStatus'])->name('tax-settings.summary-by-status')->middleware('permission:tax-settings.view');
+        Route::put('tax-codes/{taxCode}', [TaxCodeController::class, 'update'])->name('tax-codes.update')->middleware('permission:finance.tax-codes.edit,finance.tax-codes.update');
+        Route::post('tax-settings/{taxSetting}/activate', [TaxSettingController::class, 'activate'])->name('tax-settings.activate')->middleware('permission:tax-settings.edit,finance.tax-settings.update');
+        Route::post('tax-settings/{taxSetting}/deactivate', [TaxSettingController::class, 'deactivate'])->name('tax-settings.deactivate')->middleware('permission:tax-settings.edit,finance.tax-settings.update');
+        Route::post('tax-settings/bulk-activate', [TaxSettingController::class, 'bulkActivate'])->name('tax-settings.bulk-activate')->middleware('permission:tax-settings.edit,finance.tax-settings.update');
+        Route::post('tax-settings/bulk-deactivate', [TaxSettingController::class, 'bulkDeactivate'])->name('tax-settings.bulk-deactivate')->middleware('permission:tax-settings.edit,finance.tax-settings.update');
+        Route::post('tax-settings/bulk-delete', [TaxSettingController::class, 'bulkDelete'])->name('tax-settings.bulk-delete')->middleware('permission:tax-settings.delete,finance.tax-settings.delete');
+        Route::get('tax-settings/export', [TaxSettingController::class, 'export'])->name('tax-settings.export')->middleware('permission:tax-settings.view,finance.tax-settings.view');
+        Route::get('tax-settings/statistics', [TaxSettingController::class, 'statistics'])->name('tax-settings.statistics')->middleware('permission:tax-settings.view,finance.tax-settings.view');
+        Route::get('tax-settings/trends', [TaxSettingController::class, 'trends'])->name('tax-settings.trends')->middleware('permission:tax-settings.view,finance.tax-settings.view');
+        Route::get('tax-settings/summary-by-type', [TaxSettingController::class, 'summaryByType'])->name('tax-settings.summary-by-type')->middleware('permission:tax-settings.view,finance.tax-settings.view');
+        Route::get('tax-settings/summary-by-status', [TaxSettingController::class, 'summaryByStatus'])->name('tax-settings.summary-by-status')->middleware('permission:tax-settings.view,finance.tax-settings.view');
         Route::resource('tax-file-imports', TaxFileImportController::class)->except(['edit', 'update']);
         Route::post('tax-file-imports/bulk-delete', [TaxFileImportController::class, 'bulkDelete'])->name('tax-file-imports.bulk-delete');
         Route::post('tax-file-imports/{taxFileImport}/process', [TaxFileImportController::class, 'processImport'])->name('tax-file-imports.process');
@@ -1044,12 +1047,12 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('e-materai-transactions/bulk-delete', [EMateraiTransactionController::class, 'bulkDelete'])->name('e-materai-transactions.bulk-delete');
         Route::post('e-materai-transactions/{eMateraiTransaction}/retry', [EMateraiTransactionController::class, 'retry'])->name('e-materai-transactions.retry');
 
-        Route::resource('faktur-pajak', FakturPajakController::class)->middleware('permission:faktur-pajak.view');
-        Route::get('faktur-pajak/export', [FakturPajakController::class, 'export'])->name('faktur-pajak.export')->middleware('permission:faktur-pajak.view');
-        Route::post('faktur-pajak/{fakturPajak}/submit', [FakturPajakController::class, 'submit'])->name('faktur-pajak.submit')->middleware('permission:faktur-pajak.edit');
-        Route::post('faktur-pajak/{fakturPajak}/approve', [FakturPajakController::class, 'approve'])->name('faktur-pajak.approve')->middleware('permission:faktur-pajak.edit');
-        Route::post('faktur-pajak/{fakturPajak}/reject', [FakturPajakController::class, 'reject'])->name('faktur-pajak.reject')->middleware('permission:faktur-pajak.edit');
-        Route::post('faktur-pajak/{fakturPajak}/draft', [FakturPajakController::class, 'draft'])->name('faktur-pajak.draft')->middleware('permission:faktur-pajak.edit');
+        Route::resource('faktur-pajak', FakturPajakController::class)->middleware('permission:faktur-pajak.view,finance.faktur-pajak.view');
+        Route::get('faktur-pajak/export', [FakturPajakController::class, 'export'])->name('faktur-pajak.export')->middleware('permission:faktur-pajak.view,finance.faktur-pajak.view');
+        Route::post('faktur-pajak/{fakturPajak}/submit', [FakturPajakController::class, 'submit'])->name('faktur-pajak.submit')->middleware('permission:faktur-pajak.edit,finance.faktur-pajak.update');
+        Route::post('faktur-pajak/{fakturPajak}/approve', [FakturPajakController::class, 'approve'])->name('faktur-pajak.approve')->middleware('permission:faktur-pajak.edit,finance.faktur-pajak.update');
+        Route::post('faktur-pajak/{fakturPajak}/reject', [FakturPajakController::class, 'reject'])->name('faktur-pajak.reject')->middleware('permission:faktur-pajak.edit,finance.faktur-pajak.update');
+        Route::post('faktur-pajak/{fakturPajak}/draft', [FakturPajakController::class, 'draft'])->name('faktur-pajak.draft')->middleware('permission:faktur-pajak.edit,finance.faktur-pajak.update');
 
         // New Finance routes
         Route::resource('sales-commissions', SalesCommissionController::class);
@@ -1175,11 +1178,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('inventory-issuings/users/{userId}/teams', [InventoryIssuingController::class, 'getUserTeams'])->name('inventory-issuings.user-teams');
         Route::get('inventory-issuings/team-data/{team}/members', [InventoryIssuingController::class, 'getTeamMembers'])->name('inventory-issuings.team-members');
 
-        Route::post('inventory-issuings/{id}/send', [InventoryIssuingController::class, 'send'])->name('inventory-issuings.send');
-        Route::post('inventory-issuings/{id}/receive', [InventoryIssuingController::class, 'receive'])->name('inventory-issuings.receive');
+        Route::post('inventory-issuings/{id}/send', [InventoryIssuingController::class, 'send'])->name('inventory-issuings.send')->middleware('permission:warehouse.inventory-issuings.update');
+        Route::post('inventory-issuings/{id}/receive', [InventoryIssuingController::class, 'receive'])->name('inventory-issuings.receive')->middleware('permission:warehouse.inventory-issuings.update');
         Route::get('inventory-issuings/all-products', [InventoryIssuingController::class, 'getAllProducts'])->name('inventory-issuings.all-products');
-        Route::post('inventory-issuings/{id}/add-item', [InventoryIssuingController::class, 'addItem'])->name('inventory-issuings.add-item');
-        Route::delete('inventory-issuings/{id}/delete-item/{itemId}', [InventoryIssuingController::class, 'deleteItem'])->name('inventory-issuings.delete-item');
+        Route::post('inventory-issuings/{id}/add-item', [InventoryIssuingController::class, 'addItem'])->name('inventory-issuings.add-item')->middleware('permission:warehouse.inventory-issuings.update');
+        Route::delete('inventory-issuings/{id}/delete-item/{itemId}', [InventoryIssuingController::class, 'deleteItem'])->name('inventory-issuings.delete-item')->middleware('permission:warehouse.inventory-issuings.update');
         Route::get('inventory-issuings/modal-data', [InventoryIssuingController::class, 'getModalData'])->name('inventory-issuings.modal-data');
         Route::get('inventory-issuings/{id}/details', [InventoryIssuingController::class, 'getIssuingDetails'])->name('inventory-issuings.details');
 
@@ -1411,6 +1414,9 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('/', function () {
             return view('system.dashboard');
         })->name('dashboard');
+        // Audit Master Role 27 Nov 2026: halaman admin System dulu hanya butuh login (siapa pun bisa
+        // mengubah role/permission/user lewat URL). Sekarang mengikuti izin menu yang sama dengan
+        // sidebar; "x.*" = izin apa pun di menu x. Admin/Management tetap lolos.
         Route::get('backup-restore', [BackupRestoreController::class, 'index'])->name('backup-restore.index')->middleware('permission:system.backup-restore');
         Route::get('catalyst-import', [CatalystImportController::class, 'index'])->name('catalyst-import.index')->middleware('permission:system.backup-restore');
         Route::get('catalyst-import/status', [CatalystImportController::class, 'status'])->name('catalyst-import.status')->middleware('permission:system.backup-restore');
@@ -1428,114 +1434,114 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::put('master-term-of-payments/{masterTermOfPayment}', [\App\Http\Controllers\System\TermOfPaymentController::class, 'update'])->name('master-term-of-payments.update')->middleware('permission:system.master-term-of-payments.update');
         Route::delete('master-term-of-payments/{masterTermOfPayment}', [\App\Http\Controllers\System\TermOfPaymentController::class, 'destroy'])->name('master-term-of-payments.destroy')->middleware('permission:system.master-term-of-payments.delete');
         Route::post('master-term-of-payments/{masterTermOfPayment}/toggle-status', [\App\Http\Controllers\System\TermOfPaymentController::class, 'toggleStatus'])->name('master-term-of-payments.toggle-status')->middleware('permission:system.master-term-of-payments.update');
-        Route::resource('users', UserController::class);
-        Route::post('users/bulk-delete', [UserController::class, 'bulkDelete'])->name('users.bulk-delete');
-        Route::resource('departments', DepartmentController::class);
-        Route::post('departments/bulk-delete', [DepartmentController::class, 'bulkDelete'])->name('departments.bulk-delete');
-        Route::resource('provinces', ProvinceController::class);
-        Route::post('provinces/bulk-delete', [ProvinceController::class, 'bulkDelete'])->name('provinces.bulk-delete');
-        Route::get('provinces/{id}/delete-info/{type}', [ProvinceController::class, 'getDeleteInfo'])->name('provinces.delete-info');
+        Route::resource('users', UserController::class)->middleware('permission:system.users.*');
+        Route::post('users/bulk-delete', [UserController::class, 'bulkDelete'])->name('users.bulk-delete')->middleware('permission:system.users.*');
+        Route::resource('departments', DepartmentController::class)->middleware('permission:system.departments.*');
+        Route::post('departments/bulk-delete', [DepartmentController::class, 'bulkDelete'])->name('departments.bulk-delete')->middleware('permission:system.departments.*');
+        Route::resource('provinces', ProvinceController::class)->middleware('permission:system.provinces.*');
+        Route::post('provinces/bulk-delete', [ProvinceController::class, 'bulkDelete'])->name('provinces.bulk-delete')->middleware('permission:system.provinces.*');
+        Route::get('provinces/{id}/delete-info/{type}', [ProvinceController::class, 'getDeleteInfo'])->name('provinces.delete-info')->middleware('permission:system.provinces.*');
 
         // City routes
         Route::get('provinces/{provinceId}/cities', [ProvinceController::class, 'getCities'])->name('provinces.cities');
-        Route::get('cities/{cityId}', [ProvinceController::class, 'showCity'])->name('cities.show');
-        Route::get('cities/{cityId}/edit', [ProvinceController::class, 'editCity'])->name('cities.edit');
-        Route::post('cities', [ProvinceController::class, 'storeCity'])->name('cities.store');
-        Route::put('cities/{cityId}', [ProvinceController::class, 'updateCity'])->name('cities.update');
-        Route::delete('cities/{cityId}', [ProvinceController::class, 'destroyCity'])->name('cities.destroy');
-        Route::post('cities/bulk-delete', [ProvinceController::class, 'bulkDeleteCities'])->name('cities.bulk-delete');
+        Route::get('cities/{cityId}', [ProvinceController::class, 'showCity'])->name('cities.show')->middleware('permission:system.provinces.*');
+        Route::get('cities/{cityId}/edit', [ProvinceController::class, 'editCity'])->name('cities.edit')->middleware('permission:system.provinces.*');
+        Route::post('cities', [ProvinceController::class, 'storeCity'])->name('cities.store')->middleware('permission:system.provinces.*');
+        Route::put('cities/{cityId}', [ProvinceController::class, 'updateCity'])->name('cities.update')->middleware('permission:system.provinces.*');
+        Route::delete('cities/{cityId}', [ProvinceController::class, 'destroyCity'])->name('cities.destroy')->middleware('permission:system.provinces.*');
+        Route::post('cities/bulk-delete', [ProvinceController::class, 'bulkDeleteCities'])->name('cities.bulk-delete')->middleware('permission:system.provinces.*');
 
         // District routes
         Route::get('cities/{cityId}/districts', [ProvinceController::class, 'getDistricts'])->name('cities.districts');
-        Route::get('districts/{districtId}', [ProvinceController::class, 'showDistrict'])->name('districts.show');
-        Route::get('districts/{districtId}/edit', [ProvinceController::class, 'editDistrict'])->name('districts.edit');
-        Route::post('districts', [ProvinceController::class, 'storeDistrict'])->name('districts.store');
-        Route::put('districts/{districtId}', [ProvinceController::class, 'updateDistrict'])->name('districts.update');
-        Route::delete('districts/{districtId}', [ProvinceController::class, 'destroyDistrict'])->name('districts.destroy');
-        Route::post('districts/bulk-delete', [ProvinceController::class, 'bulkDeleteDistricts'])->name('districts.bulk-delete');
+        Route::get('districts/{districtId}', [ProvinceController::class, 'showDistrict'])->name('districts.show')->middleware('permission:system.provinces.*');
+        Route::get('districts/{districtId}/edit', [ProvinceController::class, 'editDistrict'])->name('districts.edit')->middleware('permission:system.provinces.*');
+        Route::post('districts', [ProvinceController::class, 'storeDistrict'])->name('districts.store')->middleware('permission:system.provinces.*');
+        Route::put('districts/{districtId}', [ProvinceController::class, 'updateDistrict'])->name('districts.update')->middleware('permission:system.provinces.*');
+        Route::delete('districts/{districtId}', [ProvinceController::class, 'destroyDistrict'])->name('districts.destroy')->middleware('permission:system.provinces.*');
+        Route::post('districts/bulk-delete', [ProvinceController::class, 'bulkDeleteDistricts'])->name('districts.bulk-delete')->middleware('permission:system.provinces.*');
 
         // Subdistrict routes
         Route::get('districts/{districtId}/subdistricts', [ProvinceController::class, 'getSubdistricts'])->name('districts.subdistricts');
-        Route::get('subdistricts/{subdistrictId}', [ProvinceController::class, 'showSubdistrict'])->name('subdistricts.show');
-        Route::get('subdistricts/{subdistrictId}/edit', [ProvinceController::class, 'editSubdistrict'])->name('subdistricts.edit');
-        Route::post('subdistricts', [ProvinceController::class, 'storeSubdistrict'])->name('subdistricts.store');
-        Route::put('subdistricts/{subdistrictId}', [ProvinceController::class, 'updateSubdistrict'])->name('subdistricts.update');
-        Route::delete('subdistricts/{subdistrictId}', [ProvinceController::class, 'destroySubdistrict'])->name('subdistricts.destroy');
-        Route::post('subdistricts/bulk-delete', [ProvinceController::class, 'bulkDeleteSubdistricts'])->name('subdistricts.bulk-delete');
+        Route::get('subdistricts/{subdistrictId}', [ProvinceController::class, 'showSubdistrict'])->name('subdistricts.show')->middleware('permission:system.provinces.*');
+        Route::get('subdistricts/{subdistrictId}/edit', [ProvinceController::class, 'editSubdistrict'])->name('subdistricts.edit')->middleware('permission:system.provinces.*');
+        Route::post('subdistricts', [ProvinceController::class, 'storeSubdistrict'])->name('subdistricts.store')->middleware('permission:system.provinces.*');
+        Route::put('subdistricts/{subdistrictId}', [ProvinceController::class, 'updateSubdistrict'])->name('subdistricts.update')->middleware('permission:system.provinces.*');
+        Route::delete('subdistricts/{subdistrictId}', [ProvinceController::class, 'destroySubdistrict'])->name('subdistricts.destroy')->middleware('permission:system.provinces.*');
+        Route::post('subdistricts/bulk-delete', [ProvinceController::class, 'bulkDeleteSubdistricts'])->name('subdistricts.bulk-delete')->middleware('permission:system.provinces.*');
         Route::resource('notifications', NotificationController::class);
-        Route::post('roles/{id}/duplicate', [RoleController::class, 'duplicate'])->name('roles.duplicate');
-        Route::resource('roles', RoleController::class);
-        Route::post('roles/bulk-delete', [RoleController::class, 'bulkDelete'])->name('roles.bulk-delete');
-        Route::post('roles/{role}/activate', [RoleController::class, 'activate'])->name('roles.activate');
-        Route::post('roles/{role}/deactivate', [RoleController::class, 'deactivate'])->name('roles.deactivate');
-        Route::post('roles/{role}/assign-users', [RoleController::class, 'assignUsers'])->name('roles.assign-users');
-        Route::get('roles/export', [RoleController::class, 'export'])->name('roles.export');
+        Route::post('roles/{id}/duplicate', [RoleController::class, 'duplicate'])->name('roles.duplicate')->middleware('permission:system.roles.*');
+        Route::resource('roles', RoleController::class)->middleware('permission:system.roles.*');
+        Route::post('roles/bulk-delete', [RoleController::class, 'bulkDelete'])->name('roles.bulk-delete')->middleware('permission:system.roles.*');
+        Route::post('roles/{role}/activate', [RoleController::class, 'activate'])->name('roles.activate')->middleware('permission:system.roles.*');
+        Route::post('roles/{role}/deactivate', [RoleController::class, 'deactivate'])->name('roles.deactivate')->middleware('permission:system.roles.*');
+        Route::post('roles/{role}/assign-users', [RoleController::class, 'assignUsers'])->name('roles.assign-users')->middleware('permission:system.roles.*');
+        Route::get('roles/export', [RoleController::class, 'export'])->name('roles.export')->middleware('permission:system.roles.*');
 
         // Department Roles Management
-        Route::resource('department-roles', \App\Http\Controllers\System\DepartmentRoleController::class);
-        Route::post('department-roles/bulk-assign', [\App\Http\Controllers\System\DepartmentRoleController::class, 'bulkAssignUsers'])->name('department-roles.bulk-assign');
+        Route::resource('department-roles', \App\Http\Controllers\System\DepartmentRoleController::class)->middleware('permission:system.roles.*');
+        Route::post('department-roles/bulk-assign', [\App\Http\Controllers\System\DepartmentRoleController::class, 'bulkAssignUsers'])->name('department-roles.bulk-assign')->middleware('permission:system.roles.*');
 
         // Position Roles Management
-        Route::resource('position-roles', \App\Http\Controllers\System\PositionRoleController::class);
-        Route::post('position-roles/bulk-assign', [\App\Http\Controllers\System\PositionRoleController::class, 'bulkAssignUsers'])->name('position-roles.bulk-assign');
-        Route::resource('working-hours', WorkingHoursController::class);
-        Route::post('working-hours/bulk-delete', [WorkingHoursController::class, 'bulkDelete'])->name('working-hours.bulk-delete');
-        Route::get('working-hours/user/{userId}', [WorkingHoursController::class, 'getUserWorkingHours'])->name('working-hours.user');
-        Route::get('working-hours/user/{userId}/date/{date}', [WorkingHoursController::class, 'getWorkingHoursForDate'])->name('working-hours.user-date');
-        Route::post('working-hours/exceptions', [WorkingHoursController::class, 'createException'])->name('working-hours.exceptions');
-        Route::get('working-hours/export', [WorkingHoursController::class, 'export'])->name('working-hours.export');
-        Route::resource('audit-logs', AuditLogController::class)->only(['index', 'show']);
-        Route::get('audit-logs/export', [AuditLogController::class, 'export'])->name('audit-logs.export');
-        Route::get('audit-logs/user/{userId}', [AuditLogController::class, 'getUserActivity'])->name('audit-logs.user');
-        Route::get('audit-logs/model/{modelType}/{modelId}', [AuditLogController::class, 'getModelHistory'])->name('audit-logs.model');
-        Route::get('audit-logs/summary', [AuditLogController::class, 'getActivitySummary'])->name('audit-logs.summary');
-        Route::get('audit-logs/top-users', [AuditLogController::class, 'getTopUsers'])->name('audit-logs.top-users');
-        Route::get('audit-logs/recent', [AuditLogController::class, 'getRecentActivity'])->name('audit-logs.recent');
-        Route::post('audit-logs/cleanup', [AuditLogController::class, 'cleanup'])->name('audit-logs.cleanup');
-        Route::resource('system-logs', SystemLogController::class)->only(['index', 'show']);
-        Route::get('system-logs/export', [SystemLogController::class, 'export'])->name('system-logs.export');
-        Route::get('system-logs/summary', [SystemLogController::class, 'getLogSummary'])->name('system-logs.summary');
-        Route::get('system-logs/errors', [SystemLogController::class, 'getRecentErrors'])->name('system-logs.errors');
-        Route::get('system-logs/warnings', [SystemLogController::class, 'getRecentWarnings'])->name('system-logs.warnings');
-        Route::get('system-logs/level/{level}', [SystemLogController::class, 'getLogsByLevel'])->name('system-logs.level');
-        Route::get('system-logs/time-range', [SystemLogController::class, 'getLogsByTimeRange'])->name('system-logs.time-range');
-        Route::post('system-logs/cleanup', [SystemLogController::class, 'cleanup'])->name('system-logs.cleanup');
-        Route::get('system-logs/statistics', [SystemLogController::class, 'getLogStatistics'])->name('system-logs.statistics');
-        Route::resource('api-tokens', ApiTokenController::class);
-        Route::post('api-tokens/bulk-delete', [ApiTokenController::class, 'bulkDelete'])->name('api-tokens.bulk-delete');
-        Route::post('api-tokens/{apiToken}/regenerate', [ApiTokenController::class, 'regenerateToken'])->name('api-tokens.regenerate');
-        Route::post('api-tokens/{apiToken}/extend', [ApiTokenController::class, 'extendExpiry'])->name('api-tokens.extend');
-        Route::get('api-tokens/user/{userId}', [ApiTokenController::class, 'getUserTokens'])->name('api-tokens.user');
-        Route::get('api-tokens/expiring', [ApiTokenController::class, 'getExpiringTokens'])->name('api-tokens.expiring');
-        Route::get('api-tokens/export', [ApiTokenController::class, 'export'])->name('api-tokens.export');
-        Route::resource('user-sessions', UserSessionController::class)->only(['index', 'show', 'destroy']);
-        Route::post('user-sessions/bulk-delete', [UserSessionController::class, 'bulkDelete'])->name('user-sessions.bulk-delete');
-        Route::get('user-sessions/user/{userId}', [UserSessionController::class, 'getUserSessions'])->name('user-sessions.user');
-        Route::get('user-sessions/active', [UserSessionController::class, 'getActiveSessions'])->name('user-sessions.active');
-        Route::get('user-sessions/expired', [UserSessionController::class, 'getExpiredSessions'])->name('user-sessions.expired');
-        Route::post('user-sessions/cleanup', [UserSessionController::class, 'cleanupExpiredSessions'])->name('user-sessions.cleanup');
-        Route::get('user-sessions/statistics', [UserSessionController::class, 'getSessionStatistics'])->name('user-sessions.statistics');
-        Route::get('user-sessions/export', [UserSessionController::class, 'export'])->name('user-sessions.export');
-        Route::resource('password-histories', PasswordHistoryController::class)->only(['index', 'show']);
-        Route::get('password-histories/user/{userId}', [PasswordHistoryController::class, 'getUserPasswordHistory'])->name('password-histories.user');
-        Route::get('password-histories/recent', [PasswordHistoryController::class, 'getRecentPasswordChanges'])->name('password-histories.recent');
-        Route::get('password-histories/export', [PasswordHistoryController::class, 'export'])->name('password-histories.export');
-        Route::resource('maintenance-logs', MaintenanceLogController::class);
-        Route::get('maintenance-logs/upcoming', [MaintenanceLogController::class, 'getUpcomingMaintenance'])->name('maintenance-logs.upcoming');
-        Route::get('maintenance-logs/statistics', [MaintenanceLogController::class, 'getMaintenanceStatistics'])->name('maintenance-logs.statistics');
-        Route::get('maintenance-logs/export', [MaintenanceLogController::class, 'export'])->name('maintenance-logs.export');
-        Route::resource('backup-logs', BackupLogController::class)->only(['index', 'show']);
-        Route::get('backup-logs/statistics', [BackupLogController::class, 'getBackupStatistics'])->name('backup-logs.statistics');
-        Route::get('backup-logs/recent', [BackupLogController::class, 'getRecentBackups'])->name('backup-logs.recent');
-        Route::get('backup-logs/type/{type}', [BackupLogController::class, 'getBackupsByType'])->name('backup-logs.type');
-        Route::get('backup-logs/export', [BackupLogController::class, 'export'])->name('backup-logs.export');
-        Route::resource('system-health', SystemHealthController::class)->only(['index', 'show']);
-        Route::get('system-health/overall', [SystemHealthController::class, 'getOverallHealth'])->name('system-health.overall');
-        Route::get('system-health/component/{component}', [SystemHealthController::class, 'getComponentHealth'])->name('system-health.component');
-        Route::get('system-health/statistics', [SystemHealthController::class, 'getHealthStatistics'])->name('system-health.statistics');
-        Route::get('system-health/critical', [SystemHealthController::class, 'getCriticalIssues'])->name('system-health.critical');
-        Route::get('system-health/warnings', [SystemHealthController::class, 'getWarnings'])->name('system-health.warnings');
-        Route::get('system-health/export', [SystemHealthController::class, 'export'])->name('system-health.export');
+        Route::resource('position-roles', \App\Http\Controllers\System\PositionRoleController::class)->middleware('permission:system.roles.*');
+        Route::post('position-roles/bulk-assign', [\App\Http\Controllers\System\PositionRoleController::class, 'bulkAssignUsers'])->name('position-roles.bulk-assign')->middleware('permission:system.roles.*');
+        Route::resource('working-hours', WorkingHoursController::class)->middleware('permission:system.access-control.*,system.users.*');
+        Route::post('working-hours/bulk-delete', [WorkingHoursController::class, 'bulkDelete'])->name('working-hours.bulk-delete')->middleware('permission:system.access-control.*,system.users.*');
+        Route::get('working-hours/user/{userId}', [WorkingHoursController::class, 'getUserWorkingHours'])->name('working-hours.user')->middleware('permission:system.access-control.*,system.users.*');
+        Route::get('working-hours/user/{userId}/date/{date}', [WorkingHoursController::class, 'getWorkingHoursForDate'])->name('working-hours.user-date')->middleware('permission:system.access-control.*,system.users.*');
+        Route::post('working-hours/exceptions', [WorkingHoursController::class, 'createException'])->name('working-hours.exceptions')->middleware('permission:system.access-control.*,system.users.*');
+        Route::get('working-hours/export', [WorkingHoursController::class, 'export'])->name('working-hours.export')->middleware('permission:system.access-control.*,system.users.*');
+        Route::resource('audit-logs', AuditLogController::class)->only(['index', 'show'])->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/export', [AuditLogController::class, 'export'])->name('audit-logs.export')->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/user/{userId}', [AuditLogController::class, 'getUserActivity'])->name('audit-logs.user')->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/model/{modelType}/{modelId}', [AuditLogController::class, 'getModelHistory'])->name('audit-logs.model')->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/summary', [AuditLogController::class, 'getActivitySummary'])->name('audit-logs.summary')->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/top-users', [AuditLogController::class, 'getTopUsers'])->name('audit-logs.top-users')->middleware('permission:system.audit-trails.*');
+        Route::get('audit-logs/recent', [AuditLogController::class, 'getRecentActivity'])->name('audit-logs.recent')->middleware('permission:system.audit-trails.*');
+        Route::post('audit-logs/cleanup', [AuditLogController::class, 'cleanup'])->name('audit-logs.cleanup')->middleware('permission:system.audit-trails.*');
+        Route::resource('system-logs', SystemLogController::class)->only(['index', 'show'])->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/export', [SystemLogController::class, 'export'])->name('system-logs.export')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/summary', [SystemLogController::class, 'getLogSummary'])->name('system-logs.summary')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/errors', [SystemLogController::class, 'getRecentErrors'])->name('system-logs.errors')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/warnings', [SystemLogController::class, 'getRecentWarnings'])->name('system-logs.warnings')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/level/{level}', [SystemLogController::class, 'getLogsByLevel'])->name('system-logs.level')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/time-range', [SystemLogController::class, 'getLogsByTimeRange'])->name('system-logs.time-range')->middleware('permission:system.audit-trails.*');
+        Route::post('system-logs/cleanup', [SystemLogController::class, 'cleanup'])->name('system-logs.cleanup')->middleware('permission:system.audit-trails.*');
+        Route::get('system-logs/statistics', [SystemLogController::class, 'getLogStatistics'])->name('system-logs.statistics')->middleware('permission:system.audit-trails.*');
+        Route::resource('api-tokens', ApiTokenController::class)->middleware('permission:system.users.*');
+        Route::post('api-tokens/bulk-delete', [ApiTokenController::class, 'bulkDelete'])->name('api-tokens.bulk-delete')->middleware('permission:system.users.*');
+        Route::post('api-tokens/{apiToken}/regenerate', [ApiTokenController::class, 'regenerateToken'])->name('api-tokens.regenerate')->middleware('permission:system.users.*');
+        Route::post('api-tokens/{apiToken}/extend', [ApiTokenController::class, 'extendExpiry'])->name('api-tokens.extend')->middleware('permission:system.users.*');
+        Route::get('api-tokens/user/{userId}', [ApiTokenController::class, 'getUserTokens'])->name('api-tokens.user')->middleware('permission:system.users.*');
+        Route::get('api-tokens/expiring', [ApiTokenController::class, 'getExpiringTokens'])->name('api-tokens.expiring')->middleware('permission:system.users.*');
+        Route::get('api-tokens/export', [ApiTokenController::class, 'export'])->name('api-tokens.export')->middleware('permission:system.users.*');
+        Route::resource('user-sessions', UserSessionController::class)->only(['index', 'show', 'destroy'])->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::post('user-sessions/bulk-delete', [UserSessionController::class, 'bulkDelete'])->name('user-sessions.bulk-delete')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('user-sessions/user/{userId}', [UserSessionController::class, 'getUserSessions'])->name('user-sessions.user')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('user-sessions/active', [UserSessionController::class, 'getActiveSessions'])->name('user-sessions.active')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('user-sessions/expired', [UserSessionController::class, 'getExpiredSessions'])->name('user-sessions.expired')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::post('user-sessions/cleanup', [UserSessionController::class, 'cleanupExpiredSessions'])->name('user-sessions.cleanup')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('user-sessions/statistics', [UserSessionController::class, 'getSessionStatistics'])->name('user-sessions.statistics')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('user-sessions/export', [UserSessionController::class, 'export'])->name('user-sessions.export')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::resource('password-histories', PasswordHistoryController::class)->only(['index', 'show'])->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('password-histories/user/{userId}', [PasswordHistoryController::class, 'getUserPasswordHistory'])->name('password-histories.user')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('password-histories/recent', [PasswordHistoryController::class, 'getRecentPasswordChanges'])->name('password-histories.recent')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::get('password-histories/export', [PasswordHistoryController::class, 'export'])->name('password-histories.export')->middleware('permission:system.audit-trails.*,system.users.*');
+        Route::resource('maintenance-logs', MaintenanceLogController::class)->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('maintenance-logs/upcoming', [MaintenanceLogController::class, 'getUpcomingMaintenance'])->name('maintenance-logs.upcoming')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('maintenance-logs/statistics', [MaintenanceLogController::class, 'getMaintenanceStatistics'])->name('maintenance-logs.statistics')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('maintenance-logs/export', [MaintenanceLogController::class, 'export'])->name('maintenance-logs.export')->middleware('permission:system.settings.*,settings.system.*');
+        Route::resource('backup-logs', BackupLogController::class)->only(['index', 'show'])->middleware('permission:system.backup-restore.*');
+        Route::get('backup-logs/statistics', [BackupLogController::class, 'getBackupStatistics'])->name('backup-logs.statistics')->middleware('permission:system.backup-restore.*');
+        Route::get('backup-logs/recent', [BackupLogController::class, 'getRecentBackups'])->name('backup-logs.recent')->middleware('permission:system.backup-restore.*');
+        Route::get('backup-logs/type/{type}', [BackupLogController::class, 'getBackupsByType'])->name('backup-logs.type')->middleware('permission:system.backup-restore.*');
+        Route::get('backup-logs/export', [BackupLogController::class, 'export'])->name('backup-logs.export')->middleware('permission:system.backup-restore.*');
+        Route::resource('system-health', SystemHealthController::class)->only(['index', 'show'])->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/overall', [SystemHealthController::class, 'getOverallHealth'])->name('system-health.overall')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/component/{component}', [SystemHealthController::class, 'getComponentHealth'])->name('system-health.component')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/statistics', [SystemHealthController::class, 'getHealthStatistics'])->name('system-health.statistics')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/critical', [SystemHealthController::class, 'getCriticalIssues'])->name('system-health.critical')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/warnings', [SystemHealthController::class, 'getWarnings'])->name('system-health.warnings')->middleware('permission:system.settings.*,settings.system.*');
+        Route::get('system-health/export', [SystemHealthController::class, 'export'])->name('system-health.export')->middleware('permission:system.settings.*,settings.system.*');
     });
 
     // Company Routes
@@ -1551,31 +1557,31 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('companies/{company}/documents', [CompanyController::class, 'documents'])->name('companies.documents')->middleware('permission:company.companies.view');
         Route::post('companies/{company}/documents', [CompanyController::class, 'uploadDocument'])->name('companies.documents.upload')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/documents/{document}', [CompanyController::class, 'deleteDocument'])->name('companies.documents.delete')->middleware('permission:company.companies.update');
-        Route::get('companies/{company}/notes', [CompanyController::class, 'notes'])->name('companies.notes')->middleware('permission:companies.view');
+        Route::get('companies/{company}/notes', [CompanyController::class, 'notes'])->name('companies.notes')->middleware('permission:companies.view,company.companies.view');
         Route::post('companies/{company}/notes', [CompanyController::class, 'storeNote'])->name('companies.notes.store')->middleware('permission:company.companies.update');
         Route::put('companies/{company}/notes/{note}', [CompanyController::class, 'updateNote'])->name('companies.notes.update')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/notes/{note}', [CompanyController::class, 'deleteNote'])->name('companies.notes.delete')->middleware('permission:company.companies.update');
         Route::post('companies/{company}/tags', [CompanyController::class, 'assignTag'])->name('companies.tags.assign')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/tags/{tag}', [CompanyController::class, 'removeTag'])->name('companies.tags.remove')->middleware('permission:company.companies.update');
-        Route::get('companies/{company}/relationships', [CompanyController::class, 'relationships'])->name('companies.relationships')->middleware('permission:companies.view');
+        Route::get('companies/{company}/relationships', [CompanyController::class, 'relationships'])->name('companies.relationships')->middleware('permission:companies.view,company.companies.view');
         Route::post('companies/{company}/relationships', [CompanyController::class, 'storeRelationship'])->name('companies.relationships.store')->middleware('permission:company.companies.update');
         Route::put('companies/{company}/relationships/{relationship}', [CompanyController::class, 'updateRelationship'])->name('companies.relationships.update')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/relationships/{relationship}', [CompanyController::class, 'deleteRelationship'])->name('companies.relationships.delete')->middleware('permission:company.companies.update');
-        Route::get('companies/{company}/activities', [CompanyController::class, 'activities'])->name('companies.activities')->middleware('permission:companies.view');
+        Route::get('companies/{company}/activities', [CompanyController::class, 'activities'])->name('companies.activities')->middleware('permission:companies.view,company.companies.view');
         Route::post('companies/{company}/activities', [CompanyController::class, 'storeActivity'])->name('companies.activities.store')->middleware('permission:company.companies.update');
         Route::put('companies/{company}/activities/{activity}', [CompanyController::class, 'updateActivity'])->name('companies.activities.update')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/activities/{activity}', [CompanyController::class, 'deleteActivity'])->name('companies.activities.delete')->middleware('permission:company.companies.update');
-        Route::get('companies/{company}/communications', [CompanyController::class, 'communications'])->name('companies.communications')->middleware('permission:companies.view');
+        Route::get('companies/{company}/communications', [CompanyController::class, 'communications'])->name('companies.communications')->middleware('permission:companies.view,company.companies.view');
         Route::post('companies/{company}/communications', [CompanyController::class, 'storeCommunication'])->name('companies.communications.store')->middleware('permission:company.companies.update');
         Route::put('companies/{company}/communications/{communication}', [CompanyController::class, 'updateCommunication'])->name('companies.communications.update')->middleware('permission:company.companies.update');
         Route::delete('companies/{company}/communications/{communication}', [CompanyController::class, 'deleteCommunication'])->name('companies.communications.delete')->middleware('permission:company.companies.update');
-        Route::get('companies/{company}/dashboard', [CompanyController::class, 'dashboard'])->name('companies.dashboard')->middleware('permission:companies.view');
-        Route::post('companies/bulk-delete', [CompanyController::class, 'bulkDelete'])->name('companies.bulk-delete')->middleware('permission:companies.delete');
+        Route::get('companies/{company}/dashboard', [CompanyController::class, 'dashboard'])->name('companies.dashboard')->middleware('permission:companies.view,company.companies.view');
+        Route::post('companies/bulk-delete', [CompanyController::class, 'bulkDelete'])->name('companies.bulk-delete')->middleware('permission:companies.delete,company.companies.delete');
         Route::post('companies/bulk-update-status', [CompanyController::class, 'bulkUpdateStatus'])->name('companies.bulk-update-status')->middleware('permission:company.companies.update');
         Route::post('companies/{company}/toggle-status', [CompanyController::class, 'toggleStatus'])->name('companies.toggle-status')->middleware('permission:company.companies.update');
-        Route::get('companies/export', [CompanyController::class, 'export'])->name('companies.export')->middleware('permission:companies.view');
+        Route::get('companies/export', [CompanyController::class, 'export'])->name('companies.export')->middleware('permission:companies.view,company.companies.view');
         Route::post('companies/import', [CompanyController::class, 'import'])->name('companies.import')->middleware('permission:company.companies.update');
-        Route::get('companies/statistics', [CompanyController::class, 'getStatistics'])->name('companies.statistics')->middleware('permission:companies.view');
+        Route::get('companies/statistics', [CompanyController::class, 'getStatistics'])->name('companies.statistics')->middleware('permission:companies.view,company.companies.view');
 
         // Branch Management
         // Multi-Branch User Assignment (must be before Route::resource to avoid {branch} wildcard capture)
@@ -1623,8 +1629,8 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('customer-contacts/get-by-customer', [CustomerContactController::class, 'getByCustomer'])->name('customer-contacts.get-by-customer');
         Route::get('customer-contacts/by-customer/{customerId}', [CustomerContactController::class, 'getByCustomerId'])->name('customer-contacts.by-customer');
         Route::get('customer-contacts/get-customer-contacts', [CustomerContactController::class, 'getCustomerContacts'])->name('customer-contacts.get-customer-contacts');
-        Route::resource('customer-contacts', CustomerContactController::class)->middleware('permission:company.customers.view');
-        Route::post('customer-contacts/{customerContact}/resend-verification', [CustomerContactController::class, 'sendVerificationEmail'])->name('customer-contacts.resend-verification')->middleware('permission:company.customers.update');
+        Route::resource('customer-contacts', CustomerContactController::class)->middleware('permission:company.customers.view,marketing.customer-contacts.*');
+        Route::post('customer-contacts/{customerContact}/resend-verification', [CustomerContactController::class, 'sendVerificationEmail'])->name('customer-contacts.resend-verification')->middleware('permission:company.customers.update,marketing.customer-contacts.update');
         Route::get('customers/{customer}/credit-limits', [CustomerController::class, 'creditLimits'])->name('customers.credit-limits')->middleware('permission:company.customers.view');
         Route::post('customers/{customer}/credit-limits', [CustomerController::class, 'storeCreditLimit'])->name('customers.credit-limits.store')->middleware('permission:company.customers.update');
         Route::put('customers/{customer}/credit-limits/{creditLimit}', [CustomerController::class, 'updateCreditLimit'])->name('customers.credit-limits.update')->middleware('permission:company.customers.update');
@@ -1643,16 +1649,16 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         // Supplier Management
         Route::resource('suppliers', SupplierController::class)->middleware('permission:suppliers.view');
         Route::get('suppliers/{supplier}/credit-limits', [SupplierController::class, 'creditLimits'])->name('suppliers.credit-limits');
-        Route::post('suppliers/{supplier}/credit-limits', [SupplierController::class, 'storeCreditLimit'])->name('suppliers.credit-limits.store');
-        Route::put('suppliers/{supplier}/credit-limits/{creditLimit}', [SupplierController::class, 'updateCreditLimit'])->name('suppliers.credit-limits.update');
-        Route::delete('suppliers/{supplier}/credit-limits/{creditLimit}', [SupplierController::class, 'deleteCreditLimit'])->name('suppliers.credit-limits.delete');
+        Route::post('suppliers/{supplier}/credit-limits', [SupplierController::class, 'storeCreditLimit'])->name('suppliers.credit-limits.store')->middleware('permission:suppliers.view');
+        Route::put('suppliers/{supplier}/credit-limits/{creditLimit}', [SupplierController::class, 'updateCreditLimit'])->name('suppliers.credit-limits.update')->middleware('permission:suppliers.view');
+        Route::delete('suppliers/{supplier}/credit-limits/{creditLimit}', [SupplierController::class, 'deleteCreditLimit'])->name('suppliers.credit-limits.delete')->middleware('permission:suppliers.view');
         Route::get('suppliers/{supplier}/payment-terms', [SupplierController::class, 'paymentTerms'])->name('suppliers.payment-terms');
-        Route::post('suppliers/{supplier}/payment-terms', [SupplierController::class, 'storePaymentTerm'])->name('suppliers.payment-terms.store');
-        Route::put('suppliers/{supplier}/payment-terms/{paymentTerm}', [SupplierController::class, 'updatePaymentTerm'])->name('suppliers.payment-terms.update');
-        Route::delete('suppliers/{supplier}/payment-terms/{paymentTerm}', [SupplierController::class, 'deletePaymentTerm'])->name('suppliers.payment-terms.delete');
-        Route::post('suppliers/bulk-delete', [SupplierController::class, 'bulkDelete'])->name('suppliers.bulk-delete');
-        Route::post('suppliers/bulk-update-status', [SupplierController::class, 'bulkUpdateStatus'])->name('suppliers.bulk-update-status');
-        Route::post('suppliers/{supplier}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status');
+        Route::post('suppliers/{supplier}/payment-terms', [SupplierController::class, 'storePaymentTerm'])->name('suppliers.payment-terms.store')->middleware('permission:suppliers.view');
+        Route::put('suppliers/{supplier}/payment-terms/{paymentTerm}', [SupplierController::class, 'updatePaymentTerm'])->name('suppliers.payment-terms.update')->middleware('permission:suppliers.view');
+        Route::delete('suppliers/{supplier}/payment-terms/{paymentTerm}', [SupplierController::class, 'deletePaymentTerm'])->name('suppliers.payment-terms.delete')->middleware('permission:suppliers.view');
+        Route::post('suppliers/bulk-delete', [SupplierController::class, 'bulkDelete'])->name('suppliers.bulk-delete')->middleware('permission:suppliers.view');
+        Route::post('suppliers/bulk-update-status', [SupplierController::class, 'bulkUpdateStatus'])->name('suppliers.bulk-update-status')->middleware('permission:suppliers.view');
+        Route::post('suppliers/{supplier}/toggle-status', [SupplierController::class, 'toggleStatus'])->name('suppliers.toggle-status')->middleware('permission:suppliers.view');
         Route::get('suppliers/statistics', [SupplierController::class, 'getStatistics'])->name('suppliers.statistics');
 
         // Legacy routes
@@ -1662,11 +1668,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::post('customer-taxes/{customerTax}/toggle-status', [CustomerTaxController::class, 'toggleStatus'])->name('customer-taxes.toggle-status')->middleware('permission:marketing.customer-taxes.update');
 
         // Company Virtual Accounts - Must be before Route::resource to avoid wildcard capture
-        Route::get('company-virtual-accounts/get-company-code', [CompanyVirtualAccountController::class, 'getCompanyCode'])->name('company-virtual-accounts.get-company-code')->middleware('permission:company-virtual-accounts.view');
-        Route::post('company-virtual-accounts/set-company-code', [CompanyVirtualAccountController::class, 'setCompanyCode'])->name('company-virtual-accounts.set-company-code')->middleware('permission:marketing.company-virtual-accounts.update');
-        Route::post('company-virtual-accounts/bulk-delete', [CompanyVirtualAccountController::class, 'bulkDelete'])->name('company-virtual-accounts.bulk-delete')->middleware('permission:company-virtual-accounts.delete');
-        Route::resource('company-virtual-accounts', CompanyVirtualAccountController::class)->middleware('permission:marketing.company-virtual-accounts.view');
-        Route::post('company-virtual-accounts/{companyVirtualAccount}/toggle-status', [CompanyVirtualAccountController::class, 'toggleStatus'])->name('company-virtual-accounts.toggle-status')->middleware('permission:marketing.company-virtual-accounts.update');
+        Route::get('company-virtual-accounts/get-company-code', [CompanyVirtualAccountController::class, 'getCompanyCode'])->name('company-virtual-accounts.get-company-code')->middleware('permission:company-virtual-accounts.view,company.company-virtual-accounts.view,marketing.company-virtual-accounts.view');
+        Route::post('company-virtual-accounts/set-company-code', [CompanyVirtualAccountController::class, 'setCompanyCode'])->name('company-virtual-accounts.set-company-code')->middleware('permission:marketing.company-virtual-accounts.update,company.company-virtual-accounts.update');
+        Route::post('company-virtual-accounts/bulk-delete', [CompanyVirtualAccountController::class, 'bulkDelete'])->name('company-virtual-accounts.bulk-delete')->middleware('permission:company-virtual-accounts.delete,company.company-virtual-accounts.delete,marketing.company-virtual-accounts.delete');
+        Route::resource('company-virtual-accounts', CompanyVirtualAccountController::class)->middleware('permission:marketing.company-virtual-accounts.view,company.company-virtual-accounts.view');
+        Route::post('company-virtual-accounts/{companyVirtualAccount}/toggle-status', [CompanyVirtualAccountController::class, 'toggleStatus'])->name('company-virtual-accounts.toggle-status')->middleware('permission:marketing.company-virtual-accounts.update,company.company-virtual-accounts.update');
         Route::resource('bank-payments', BankPaymentController::class)->middleware('permission:company.bank-payments.view'); // Allow all authenticated users to view bank payments
         Route::post('bank-payments/bulk-delete', [BankPaymentController::class, 'bulkDelete'])->name('bank-payments.bulk-delete')->middleware('permission:company.bank-payments.delete');
         Route::resource('master-price-slabs', MasterPriceSlabController::class)->middleware('permission:company.master-price-slabs.view');
@@ -1692,12 +1698,13 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
             return view('other.dashboard');
         })->name('dashboard');
         Route::resource('hak-akses', HakAksesController::class);
-        Route::get('master-options/{masterOption}/details', [\App\Http\Controllers\Other\OptionDetailController::class, 'index'])->name('master-options.details');
-        Route::resource('master-options', MasterOptionController::class);
-        Route::post('master-options/bulk-delete', [MasterOptionController::class, 'bulkDelete'])->name('master-options.bulk-delete');
-        Route::post('master-options/{id}/restore', [MasterOptionController::class, 'restore'])->name('master-options.restore');
-        Route::get('option-details/create', [\App\Http\Controllers\Other\OptionDetailController::class, 'createWithQuery'])->name('option-details.create.query');
-        Route::get('option-details/create/{masterOption}', [\App\Http\Controllers\Other\OptionDetailController::class, 'create'])->name('option-details.create');
+        Route::get('master-options/{masterOption}/details', [\App\Http\Controllers\Other\OptionDetailController::class, 'index'])->name('master-options.details')->middleware('permission:company.master-options.*,other.master-options.*');
+        // show (GET /other/master-options/{id}) tetap terbuka: dipakai halaman Master Customer untuk isi dropdown.
+        Route::resource('master-options', MasterOptionController::class)->withoutMiddlewareFor('show', 'permission:company.master-options.*,other.master-options.*')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::post('master-options/bulk-delete', [MasterOptionController::class, 'bulkDelete'])->name('master-options.bulk-delete')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::post('master-options/{id}/restore', [MasterOptionController::class, 'restore'])->name('master-options.restore')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::get('option-details/create', [\App\Http\Controllers\Other\OptionDetailController::class, 'createWithQuery'])->name('option-details.create.query')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::get('option-details/create/{masterOption}', [\App\Http\Controllers\Other\OptionDetailController::class, 'create'])->name('option-details.create')->middleware('permission:company.master-options.*,other.master-options.*');
         Route::get('test-route/{id}', function ($id) {
             return 'Test route with ID: '.$id;
         })->name('test.route');
@@ -1709,11 +1716,11 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
             return 'Debug: '.route('other.option-details.create', $masterOption);
         })->name('debug.route');
-        Route::post('option-details/{masterOption}', [\App\Http\Controllers\Other\OptionDetailController::class, 'store'])->name('option-details.store');
-        Route::get('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'show'])->name('option-details.show');
-        Route::get('option-details/{optionDetail}/edit', [\App\Http\Controllers\Other\OptionDetailController::class, 'edit'])->name('option-details.edit');
-        Route::put('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'update'])->name('option-details.update');
-        Route::delete('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'destroy'])->name('option-details.destroy');
+        Route::post('option-details/{masterOption}', [\App\Http\Controllers\Other\OptionDetailController::class, 'store'])->name('option-details.store')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::get('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'show'])->name('option-details.show')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::get('option-details/{optionDetail}/edit', [\App\Http\Controllers\Other\OptionDetailController::class, 'edit'])->name('option-details.edit')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::put('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'update'])->name('option-details.update')->middleware('permission:company.master-options.*,other.master-options.*');
+        Route::delete('option-details/{optionDetail}', [\App\Http\Controllers\Other\OptionDetailController::class, 'destroy'])->name('option-details.destroy')->middleware('permission:company.master-options.*,other.master-options.*');
 
         // Customer Portal Routes
         Route::prefix('customer-portal')->name('customer-portal.')->group(function () {
@@ -1810,17 +1817,17 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
 
         // System Settings
         Route::prefix('system')->name('system.')->group(function () {
-            Route::get('/', [SystemSettingController::class, 'index'])->name('index');
-            Route::get('/create', [SystemSettingController::class, 'create'])->name('create');
-            Route::post('/', [SystemSettingController::class, 'store'])->name('store');
-            Route::get('/{systemSetting}', [SystemSettingController::class, 'show'])->name('show');
-            Route::get('/{systemSetting}/edit', [SystemSettingController::class, 'edit'])->name('edit');
-            Route::put('/{systemSetting}', [SystemSettingController::class, 'update'])->name('update');
-            Route::delete('/{systemSetting}', [SystemSettingController::class, 'destroy'])->name('destroy');
-            Route::post('/bulk-delete', [SystemSettingController::class, 'bulkDelete'])->name('bulk-delete');
-            Route::post('/{systemSetting}/activate', [SystemSettingController::class, 'activate'])->name('activate');
-            Route::post('/{systemSetting}/deactivate', [SystemSettingController::class, 'deactivate'])->name('deactivate');
-            Route::get('/export', [SystemSettingController::class, 'export'])->name('export');
+            Route::get('/', [SystemSettingController::class, 'index'])->name('index')->middleware('permission:system.settings.*,settings.system.*');
+            Route::get('/create', [SystemSettingController::class, 'create'])->name('create')->middleware('permission:system.settings.*,settings.system.*');
+            Route::post('/', [SystemSettingController::class, 'store'])->name('store')->middleware('permission:system.settings.*,settings.system.*');
+            Route::get('/{systemSetting}', [SystemSettingController::class, 'show'])->name('show')->middleware('permission:system.settings.*,settings.system.*');
+            Route::get('/{systemSetting}/edit', [SystemSettingController::class, 'edit'])->name('edit')->middleware('permission:system.settings.*,settings.system.*');
+            Route::put('/{systemSetting}', [SystemSettingController::class, 'update'])->name('update')->middleware('permission:system.settings.*,settings.system.*');
+            Route::delete('/{systemSetting}', [SystemSettingController::class, 'destroy'])->name('destroy')->middleware('permission:system.settings.*,settings.system.*');
+            Route::post('/bulk-delete', [SystemSettingController::class, 'bulkDelete'])->name('bulk-delete')->middleware('permission:system.settings.*,settings.system.*');
+            Route::post('/{systemSetting}/activate', [SystemSettingController::class, 'activate'])->name('activate')->middleware('permission:system.settings.*,settings.system.*');
+            Route::post('/{systemSetting}/deactivate', [SystemSettingController::class, 'deactivate'])->name('deactivate')->middleware('permission:system.settings.*,settings.system.*');
+            Route::get('/export', [SystemSettingController::class, 'export'])->name('export')->middleware('permission:system.settings.*,settings.system.*');
         });
 
         // Theme Settings
@@ -1881,10 +1888,10 @@ Route::middleware(['auth', 'download.logging', 'upload.logging', 'pageview.loggi
         Route::get('/', function () {
             return view('report.dashboard');
         })->name('dashboard');
-        Route::get('warehouse', [WarehouseReportController::class, 'index'])->name('warehouse.index');
-        Route::get('operational', [OperationalReportController::class, 'index'])->name('operational.index');
-        Route::get('finance', [FinancialReportController::class, 'index'])->name('finance.index');
-        Route::get('marketing', [MarketingReportController::class, 'index'])->name('marketing.index');
+        Route::get('warehouse', [WarehouseReportController::class, 'index'])->name('warehouse.index')->middleware('permission:reports.warehouse');
+        Route::get('operational', [OperationalReportController::class, 'index'])->name('operational.index')->middleware('permission:reports.operational');
+        Route::get('finance', [FinancialReportController::class, 'index'])->name('finance.index')->middleware('permission:reports.finance');
+        Route::get('marketing', [MarketingReportController::class, 'index'])->name('marketing.index')->middleware('permission:reports.marketing');
 
         // Spec Halaman Report 24 Nov 2026: List Kontrak, Report Suspend, Potensi Lock Service,
         // Agreement Sign, Rental Report, Report Generate Invoice (izin reports.{key} dicek di controller).
@@ -2085,23 +2092,23 @@ Route::prefix('reports')->name('reports.')->middleware(['auth'])->group(function
 
 // Audit Trail Routes (Outside reports prefix)
 Route::prefix('audit-trails')->name('audit-trails.')->middleware(['auth'])->group(function () {
-    Route::get('/', [AuditTrailController::class, 'index'])->name('index');
-    Route::get('/login-history', [AuditTrailController::class, 'loginHistory'])->name('login-history');
-    Route::get('/export', [AuditTrailController::class, 'export'])->name('export');
-    Route::get('/{tableName}/{recordId}', [AuditTrailController::class, 'show'])->name('show');
+    Route::get('/', [AuditTrailController::class, 'index'])->name('index')->middleware('permission:system.audit-trails.*');
+    Route::get('/login-history', [AuditTrailController::class, 'loginHistory'])->name('login-history')->middleware('permission:system.audit-trails.*');
+    Route::get('/export', [AuditTrailController::class, 'export'])->name('export')->middleware('permission:system.audit-trails.*');
+    Route::get('/{tableName}/{recordId}', [AuditTrailController::class, 'show'])->name('show')->middleware('permission:system.audit-trails.*');
 });
 
 // Access Control Routes (Outside reports prefix)
 Route::prefix('access-control')->name('access-control.')->middleware(['auth'])->group(function () {
-    Route::get('/', [AccessControlController::class, 'index'])->name('index')->middleware('permission:access-control.view');
-    Route::post('/users/{user}/access-level', [AccessControlController::class, 'setAccessLevel'])->name('set-access-level')->middleware('permission:access-control.update');
-    Route::post('/users/{user}/login-restrictions', [AccessControlController::class, 'setLoginRestrictions'])->name('set-login-restrictions')->middleware('permission:access-control.update');
-    Route::post('/users/{user}/check-access', [AccessControlController::class, 'checkAccess'])->name('check-access');
+    Route::get('/', [AccessControlController::class, 'index'])->name('index')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
+    Route::post('/users/{user}/access-level', [AccessControlController::class, 'setAccessLevel'])->name('set-access-level')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('/users/{user}/login-restrictions', [AccessControlController::class, 'setLoginRestrictions'])->name('set-login-restrictions')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('/users/{user}/check-access', [AccessControlController::class, 'checkAccess'])->name('check-access')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
     Route::get('/users/{user}/check-login-time', [AccessControlController::class, 'checkLoginTime'])->name('check-login-time');
-    Route::get('/users/{user}/access-summary', [AccessControlController::class, 'getUserAccessSummary'])->name('access-summary')->middleware('permission:access-control.view');
-    Route::post('/users/{user}/toggle-multi-login', [AccessControlController::class, 'toggleMultiLogin'])->name('toggle-multi-login')->middleware('permission:access-control.update');
-    Route::post('/users/{user}/toggle-freeze', [AccessControlController::class, 'toggleFreeze'])->name('toggle-freeze')->middleware('permission:access-control.update');
-    Route::post('/users/{user}/toggle-screenshot', [AccessControlController::class, 'toggleScreenshot'])->name('toggle-screenshot')->middleware('permission:access-control.update');
+    Route::get('/users/{user}/access-summary', [AccessControlController::class, 'getUserAccessSummary'])->name('access-summary')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
+    Route::post('/users/{user}/toggle-multi-login', [AccessControlController::class, 'toggleMultiLogin'])->name('toggle-multi-login')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('/users/{user}/toggle-freeze', [AccessControlController::class, 'toggleFreeze'])->name('toggle-freeze')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('/users/{user}/toggle-screenshot', [AccessControlController::class, 'toggleScreenshot'])->name('toggle-screenshot')->middleware('permission:access-control.update,system.access-control.update');
 });
 
 // File Management Routes
@@ -2256,37 +2263,37 @@ Route::prefix('bank-receipt-enhancement')->name('bank-receipt-enhancement.')->mi
 
 // Role Group Enhancement Routes
 Route::prefix('role-groups')->name('system.role-groups.')->middleware(['auth'])->group(function () {
-    Route::get('/', [App\Http\Controllers\System\RoleGroupController::class, 'index'])->name('index');
-    Route::get('/create', [App\Http\Controllers\System\RoleGroupController::class, 'create'])->name('create');
-    Route::post('/', [App\Http\Controllers\System\RoleGroupController::class, 'store'])->name('store');
-    Route::get('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'show'])->name('show');
-    Route::get('/{roleGroup}/edit', [App\Http\Controllers\System\RoleGroupController::class, 'edit'])->name('edit');
-    Route::put('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'update'])->name('update');
-    Route::delete('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'destroy'])->name('destroy');
-    Route::post('/{roleGroup}/add-role', [App\Http\Controllers\System\RoleGroupController::class, 'addRole'])->name('add-role');
-    Route::delete('/{roleGroup}/remove-role', [App\Http\Controllers\System\RoleGroupController::class, 'removeRole'])->name('remove-role');
-    Route::get('/{roleGroup}/available-roles', [App\Http\Controllers\System\RoleGroupController::class, 'getAvailableRoles'])->name('available-roles');
-    Route::get('/statistics', [App\Http\Controllers\System\RoleGroupController::class, 'statistics'])->name('statistics');
-    Route::post('/{roleGroup}/duplicate', [App\Http\Controllers\System\RoleGroupController::class, 'duplicate'])->name('duplicate');
-    Route::get('/{roleGroup}/permissions', [App\Http\Controllers\System\RoleGroupController::class, 'getPermissions'])->name('permissions');
-    Route::post('/validate', [App\Http\Controllers\System\RoleGroupController::class, 'validate'])->name('validate');
-    Route::post('/bulk-action', [App\Http\Controllers\System\RoleGroupController::class, 'bulkAction'])->name('bulk-action');
+    Route::get('/', [App\Http\Controllers\System\RoleGroupController::class, 'index'])->name('index')->middleware('permission:system.roles.*');
+    Route::get('/create', [App\Http\Controllers\System\RoleGroupController::class, 'create'])->name('create')->middleware('permission:system.roles.*');
+    Route::post('/', [App\Http\Controllers\System\RoleGroupController::class, 'store'])->name('store')->middleware('permission:system.roles.*');
+    Route::get('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'show'])->name('show')->middleware('permission:system.roles.*');
+    Route::get('/{roleGroup}/edit', [App\Http\Controllers\System\RoleGroupController::class, 'edit'])->name('edit')->middleware('permission:system.roles.*');
+    Route::put('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'update'])->name('update')->middleware('permission:system.roles.*');
+    Route::delete('/{roleGroup}', [App\Http\Controllers\System\RoleGroupController::class, 'destroy'])->name('destroy')->middleware('permission:system.roles.*');
+    Route::post('/{roleGroup}/add-role', [App\Http\Controllers\System\RoleGroupController::class, 'addRole'])->name('add-role')->middleware('permission:system.roles.*');
+    Route::delete('/{roleGroup}/remove-role', [App\Http\Controllers\System\RoleGroupController::class, 'removeRole'])->name('remove-role')->middleware('permission:system.roles.*');
+    Route::get('/{roleGroup}/available-roles', [App\Http\Controllers\System\RoleGroupController::class, 'getAvailableRoles'])->name('available-roles')->middleware('permission:system.roles.*');
+    Route::get('/statistics', [App\Http\Controllers\System\RoleGroupController::class, 'statistics'])->name('statistics')->middleware('permission:system.roles.*');
+    Route::post('/{roleGroup}/duplicate', [App\Http\Controllers\System\RoleGroupController::class, 'duplicate'])->name('duplicate')->middleware('permission:system.roles.*');
+    Route::get('/{roleGroup}/permissions', [App\Http\Controllers\System\RoleGroupController::class, 'getPermissions'])->name('permissions')->middleware('permission:system.roles.*');
+    Route::post('/validate', [App\Http\Controllers\System\RoleGroupController::class, 'validate'])->name('validate')->middleware('permission:system.roles.*');
+    Route::post('/bulk-action', [App\Http\Controllers\System\RoleGroupController::class, 'bulkAction'])->name('bulk-action')->middleware('permission:system.roles.*');
 });
 
 // Customer Type Management Routes
 Route::prefix('system/customer-types')->name('system.customer-types.')->middleware(['auth'])->group(function () {
-    Route::get('/', [App\Http\Controllers\System\CustomerTypeController::class, 'index'])->name('index');
-    Route::get('/create', [App\Http\Controllers\System\CustomerTypeController::class, 'create'])->name('create');
-    Route::post('/', [App\Http\Controllers\System\CustomerTypeController::class, 'store'])->name('store');
-    Route::get('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'show'])->name('show');
-    Route::get('/{customerType}/edit', [App\Http\Controllers\System\CustomerTypeController::class, 'edit'])->name('edit');
-    Route::put('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'update'])->name('update');
-    Route::delete('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'destroy'])->name('destroy');
+    Route::get('/', [App\Http\Controllers\System\CustomerTypeController::class, 'index'])->name('index')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::get('/create', [App\Http\Controllers\System\CustomerTypeController::class, 'create'])->name('create')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::post('/', [App\Http\Controllers\System\CustomerTypeController::class, 'store'])->name('store')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::get('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'show'])->name('show')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::get('/{customerType}/edit', [App\Http\Controllers\System\CustomerTypeController::class, 'edit'])->name('edit')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::put('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'update'])->name('update')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
+    Route::delete('/{customerType}', [App\Http\Controllers\System\CustomerTypeController::class, 'destroy'])->name('destroy')->middleware('permission:marketing.customer-types.*,system.customer-types.*');
     Route::get('/api/list', [App\Http\Controllers\System\CustomerTypeController::class, 'getCustomerTypes'])->name('api.list');
 });
 
 // Location API Routes for Cascade Dropdown
-Route::prefix('api')->group(function () {
+Route::prefix('api')->middleware(['auth'])->group(function () {
     Route::get('/cities/{provinceId}', function ($provinceId) {
         $cities = \App\Models\City::where('province_id', $provinceId)->orderBy('name')->get(['id', 'name']);
 
@@ -2314,38 +2321,38 @@ Route::prefix('api')->group(function () {
 
 // Salutation Management Routes
 Route::prefix('system/salutations')->name('system.salutations.')->middleware(['auth'])->group(function () {
-    Route::get('/', [App\Http\Controllers\System\SalutationController::class, 'index'])->name('index');
-    Route::get('/create', [App\Http\Controllers\System\SalutationController::class, 'create'])->name('create');
-    Route::post('/', [App\Http\Controllers\System\SalutationController::class, 'store'])->name('store');
-    Route::get('/{salutation}/edit', [App\Http\Controllers\System\SalutationController::class, 'edit'])->name('edit');
-    Route::put('/{salutation}', [App\Http\Controllers\System\SalutationController::class, 'update'])->name('update');
-    Route::delete('/{salutation}', [App\Http\Controllers\System\SalutationController::class, 'destroy'])->name('destroy');
+    Route::get('/', [App\Http\Controllers\System\SalutationController::class, 'index'])->name('index')->middleware('permission:system.salutations.*,marketing.salutations.*');
+    Route::get('/create', [App\Http\Controllers\System\SalutationController::class, 'create'])->name('create')->middleware('permission:system.salutations.*,marketing.salutations.*');
+    Route::post('/', [App\Http\Controllers\System\SalutationController::class, 'store'])->name('store')->middleware('permission:system.salutations.*,marketing.salutations.*');
+    Route::get('/{salutation}/edit', [App\Http\Controllers\System\SalutationController::class, 'edit'])->name('edit')->middleware('permission:system.salutations.*,marketing.salutations.*');
+    Route::put('/{salutation}', [App\Http\Controllers\System\SalutationController::class, 'update'])->name('update')->middleware('permission:system.salutations.*,marketing.salutations.*');
+    Route::delete('/{salutation}', [App\Http\Controllers\System\SalutationController::class, 'destroy'])->name('destroy')->middleware('permission:system.salutations.*,marketing.salutations.*');
 });
 
 // Position Management Routes
 Route::prefix('system/positions')->name('system.positions.')->middleware(['auth'])->group(function () {
-    Route::get('/', [App\Http\Controllers\System\PositionController::class, 'index'])->name('index');
-    Route::get('/create', [App\Http\Controllers\System\PositionController::class, 'create'])->name('create');
-    Route::post('/', [App\Http\Controllers\System\PositionController::class, 'store'])->name('store');
-    Route::get('/{position}/edit', [App\Http\Controllers\System\PositionController::class, 'edit'])->name('edit');
-    Route::put('/{position}', [App\Http\Controllers\System\PositionController::class, 'update'])->name('update');
-    Route::delete('/{position}', [App\Http\Controllers\System\PositionController::class, 'destroy'])->name('destroy');
+    Route::get('/', [App\Http\Controllers\System\PositionController::class, 'index'])->name('index')->middleware('permission:company.positions.*,system.positions.*');
+    Route::get('/create', [App\Http\Controllers\System\PositionController::class, 'create'])->name('create')->middleware('permission:company.positions.*,system.positions.*');
+    Route::post('/', [App\Http\Controllers\System\PositionController::class, 'store'])->name('store')->middleware('permission:company.positions.*,system.positions.*');
+    Route::get('/{position}/edit', [App\Http\Controllers\System\PositionController::class, 'edit'])->name('edit')->middleware('permission:company.positions.*,system.positions.*');
+    Route::put('/{position}', [App\Http\Controllers\System\PositionController::class, 'update'])->name('update')->middleware('permission:company.positions.*,system.positions.*');
+    Route::delete('/{position}', [App\Http\Controllers\System\PositionController::class, 'destroy'])->name('destroy')->middleware('permission:company.positions.*,system.positions.*');
 });
 
 // Access Control Management Routes
 Route::prefix('access-control')->name('access-control.')->group(function () {
-    Route::get('/', [AccessControlController::class, 'index'])->name('index')->middleware('permission:access-control.view');
+    Route::get('/', [AccessControlController::class, 'index'])->name('index')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
 
     // User Access Configuration
-    Route::post('users/{user}/access-level', [AccessControlController::class, 'setAccessLevel'])->name('users.access-level')->middleware('permission:access-control.update');
-    Route::post('users/{user}/login-restriction', [AccessControlController::class, 'setLoginRestrictions'])->name('users.login-restriction')->middleware('permission:access-control.update');
+    Route::post('users/{user}/access-level', [AccessControlController::class, 'setAccessLevel'])->name('users.access-level')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('users/{user}/login-restriction', [AccessControlController::class, 'setLoginRestrictions'])->name('users.login-restriction')->middleware('permission:access-control.update,system.access-control.update');
 
     // Feature Toggles (Single click actions)
-    Route::post('users/{user}/toggle-multi-login', [AccessControlController::class, 'toggleMultiLogin'])->name('users.toggle-multi-login')->middleware('permission:access-control.update');
-    Route::post('users/{user}/toggle-freeze', [AccessControlController::class, 'toggleFreeze'])->name('users.toggle-freeze')->middleware('permission:access-control.update');
-    Route::post('users/{user}/toggle-screenshot', [AccessControlController::class, 'toggleScreenshot'])->name('users.toggle-screenshot')->middleware('permission:access-control.update');
+    Route::post('users/{user}/toggle-multi-login', [AccessControlController::class, 'toggleMultiLogin'])->name('users.toggle-multi-login')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('users/{user}/toggle-freeze', [AccessControlController::class, 'toggleFreeze'])->name('users.toggle-freeze')->middleware('permission:access-control.update,system.access-control.update');
+    Route::post('users/{user}/toggle-screenshot', [AccessControlController::class, 'toggleScreenshot'])->name('users.toggle-screenshot')->middleware('permission:access-control.update,system.access-control.update');
 
     // Information & Checks
-    Route::get('users/{user}/summary', [AccessControlController::class, 'getUserAccessSummary'])->name('users.summary')->middleware('permission:access-control.view');
-    Route::post('users/check-access', [AccessControlController::class, 'checkAccess'])->name('users.check-access');
+    Route::get('users/{user}/summary', [AccessControlController::class, 'getUserAccessSummary'])->name('users.summary')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
+    Route::post('users/check-access', [AccessControlController::class, 'checkAccess'])->name('users.check-access')->middleware('permission:access-control.view,system.access-control,system.access-control.view');
 });

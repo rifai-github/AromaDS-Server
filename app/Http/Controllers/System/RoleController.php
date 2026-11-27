@@ -468,6 +468,9 @@ class RoleController extends Controller
                          $resourceLabel = 'Contracts';
                     } elseif ($cleanResource === 'pipeline') {
                          $resourceLabel = 'Pipeline';
+                    } elseif ($fullResourceName === 'system.dashboard') {
+                         // Audit Master Role 27 Nov 2026: izin Dashboard utama (/dashboard).
+                         $resourceLabel = 'Dashboard Utama (Main Dashboard)';
                     } elseif ($cleanResource === 'dashboard') {
                          $resourceLabel = 'Dashboard';
                     } else {
@@ -492,8 +495,13 @@ class RoleController extends Controller
                         $action = 'approve';
                         $resourceParts = explode('.', $originalResource);
                         array_pop($resourceParts); // remove approve-contract-net
+                        // Audit 27 Nov 2026: dulu digabung ke baris "Contracts" kolom Approve sehingga
+                        // menimpa marketing.contracts.approve (approve kontrak) — izin itu jadi tak bisa
+                        // dicentang. Sekarang masuk baris "Contract Net" bersama marketing.contract-net.*.
+                        array_pop($resourceParts); // contracts -> marketing
+                        $resourceParts[] = 'contract-net';
                         $originalResource = implode('.', $resourceParts);
-                        $resourceLabel = 'Contracts';
+                        $resourceLabel = 'Contract Net';
                     } else {
                         $resourceLabel = ucwords(str_replace(['.', '-', '_'], ' ', $originalResource));
                     }
@@ -543,7 +551,10 @@ class RoleController extends Controller
                         'ids' => [
                             'create' => null, 'update' => null, 'delete' => null, 'view' => null, 
                             'approve' => null, 'download' => null, 'print' => null
-                        ]
+                        ],
+                        // Semua id yang jatuh di sel yang sama (edit/update, view/read/dashboard,
+                        // izin "hantu" <izin>.view, nama ganda). Satu centang = semuanya.
+                        'id_groups' => [],
                     ]
                 ];
             }
@@ -556,9 +567,69 @@ class RoleController extends Controller
             }
 
             $menuItems[$module][$resourceKey]['permissions']['ids'][$normalizedAction] = $permission->id;
+            $menuItems[$module][$resourceKey]['permissions']['id_groups'][$normalizedAction][] = $permission->id;
         }
 
         return $menuItems;
+    }
+
+    /**
+     * Peta id yang dikirim checkbox Master Role (id utama per sel) => semua id di sel itu, plus
+     * daftar semua id yang tampil. Dipakai update() supaya (1) satu centang memberi semua izin
+     * yang sel itu wakili, dan (2) izin role yang TIDAK tampil di grid tidak ikut terhapus.
+     *
+     * @return array{groups: array<int, int[]>, displayed: array<int, true>}
+     */
+    private function permissionGridIndex(Role $role): array
+    {
+        $groups = [];
+        $displayed = [];
+
+        foreach ($this->getGroupedPermissions($role) as $items) {
+            foreach ($items as $item) {
+                foreach ($item['permissions']['ids'] as $action => $primaryId) {
+                    if (! $primaryId) {
+                        continue;
+                    }
+                    $ids = array_values(array_unique(array_map('intval', $item['permissions']['id_groups'][$action] ?? [$primaryId])));
+                    $groups[(int) $primaryId] = $ids;
+                    foreach ($ids as $id) {
+                        $displayed[$id] = true;
+                    }
+                }
+            }
+        }
+
+        return ['groups' => $groups, 'displayed' => $displayed];
+    }
+
+    /**
+     * Lengkapi daftar id hasil centang: ekspansi id utama ke seluruh selnya, lalu pertahankan izin
+     * role yang tidak ditampilkan grid (izin tersembunyi/legacy) agar tidak hilang diam-diam.
+     *
+     * @param  int[]  $checkedIds
+     * @return int[]
+     */
+    private function resolveSubmittedPermissionIds(Role $role, array $checkedIds): array
+    {
+        $index = $this->permissionGridIndex($role);
+        $final = [];
+
+        foreach ($checkedIds as $id) {
+            $id = (int) $id;
+            foreach ($index['groups'][$id] ?? [$id] as $member) {
+                $final[$member] = true;
+            }
+        }
+
+        foreach ($role->rolePermissions()->pluck('permission_id') as $heldId) {
+            $heldId = (int) $heldId;
+            if (! isset($index['displayed'][$heldId])) {
+                $final[$heldId] = true;
+            }
+        }
+
+        return array_map('intval', array_keys($final));
     }
 
     public function edit($id)
@@ -765,6 +836,9 @@ class RoleController extends Controller
             $allPermissionIds = array_map('intval', $allPermissionIds);
         }
         
+        // Audit Master Role 27 Nov 2026: centang = seluruh sel, izin tersembunyi dipertahankan.
+        $allPermissionIds = $this->resolveSubmittedPermissionIds($role, $allPermissionIds);
+
         // Replace request permissions with merged permissions for validation
         // Ensure it's a simple array, not associative
         $request->merge(['permissions' => array_values($allPermissionIds)]);
