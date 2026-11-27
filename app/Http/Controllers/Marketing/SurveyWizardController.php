@@ -45,14 +45,28 @@ class SurveyWizardController extends Controller
         return "survey-wizard:contacts:v2:{$customerId}";
     }
 
+    /**
+     * Kunci cache daftar gedung wizard ikut "versi" tabel buildings (jumlah baris + updated_at
+     * terakhir, termasuk yang dihapus), jadi gedung yang dibuat/diubah dari menu mana pun
+     * (Master Building, Contract Wizard, ...) langsung muncul tanpa menunggu cache 5 menit habis.
+     */
     private function surveyWizardBuildingsCacheKey(): string
     {
-        return 'survey-wizard:buildings:all-active:v2';
+        $version = Building::withTrashed()
+            ->selectRaw('COUNT(*) as total, MAX(updated_at) as last_updated, MAX(deleted_at) as last_deleted')
+            ->first();
+
+        return 'survey-wizard:buildings:all:v3:' . sha1(implode('|', [
+            (int) ($version->total ?? 0),
+            (string) ($version->last_updated ?? ''),
+            (string) ($version->last_deleted ?? ''),
+        ]));
     }
 
     private function forgetSurveyWizardBuildingCaches(): void
     {
         Cache::forget('survey-wizard:buildings:all-active');
+        Cache::forget('survey-wizard:buildings:all-active:v2');
         Cache::forget($this->surveyWizardBuildingsCacheKey());
     }
 
@@ -173,7 +187,38 @@ class SurveyWizardController extends Controller
             'district' => $building->district ? ['id' => $building->district->id, 'name' => $building->district->name] : null,
             'subdistrict' => $building->subdistrict ? ['id' => $building->subdistrict->id, 'name' => $building->subdistrict->name] : null,
             'created_at' => optional($building->created_at)->toDateTimeString(),
+            'status_update' => (bool) $building->status_update,
+            // Nama gedung boleh sama (beda lokasi detail saja), jadi dropdown memakai label ini.
+            'label' => $this->buildingOptionLabel($building),
         ];
+    }
+
+    /**
+     * "Nama Gedung - alamat, kota" (+ penanda Nonaktif / provinsi-kota kosong) untuk opsi dropdown wizard: daftar gedung kini
+     * memuat semua gedung tanpa de-duplikasi, sehingga gedung bernama sama harus bisa dibedakan.
+     */
+    private function buildingOptionLabel(Building $building): string
+    {
+        $name = trim((string) $building->building_name);
+        $location = collect([
+            trim((string) $building->building_address),
+            trim((string) optional($building->city)->name),
+        ])->filter()->unique()->implode(', ');
+
+        $label = $name !== '' ? $name : 'Unnamed Building';
+        if ($location !== '') {
+            $label .= ' - ' . $location;
+        }
+        if (!$building->status_update) {
+            $label .= ' (Nonaktif)';
+        }
+        // Simpan survey tetap menolak gedung tanpa provinsi/kota (dibutuhkan untuk kode cabang
+        // nomor dokumen), jadi beri tanda sejak di dropdown.
+        if (!$building->province_id || !$building->city_id) {
+            $label .= ' (provinsi/kota belum diisi)';
+        }
+
+        return $label;
     }
 
     /**
@@ -877,14 +922,15 @@ class SurveyWizardController extends Controller
      * Always load ALL buildings - customer can select any existing building.
      * If the selected building is not yet assigned to customer, it will be 
      * assigned when the survey is saved.
+     *
+     * Jawaban klien 26 Nov 2026: untuk semua user, daftar gedung memuat SEMUA gedung tanpa
+     * kecuali - tidak lagi disaring status aktif / provinsi / kota, dan tidak di-de-duplikasi per
+     * nama+alamat (gedung bernama sama hanya beda lokasi detail). Opsi dibedakan lewat `label`.
      */
     public function getBuildings(Request $request)
     {
         $buildings = Cache::remember($this->surveyWizardBuildingsCacheKey(), now()->addMinutes(5), function () {
-            return Building::where('status_update', true)
-                ->whereNull('deleted_at')
-                ->whereNotNull('province_id')
-                ->whereNotNull('city_id')
+            return Building::query()
                 ->with([
                     'province:id,name',
                     'city:id,name,type',
@@ -895,18 +941,8 @@ class SurveyWizardController extends Controller
                 ->get([
                     'id', 'name', 'nama_gedung', 'address', 'alamat_1', 'alamat_2',
                     'postal_code', 'kode_pos', 'phone_1', 'phone_2', 'fax',
-                    'province_id', 'city_id', 'district_id', 'subdistrict_id', 'deleted_at', 'created_at'
+                    'province_id', 'city_id', 'district_id', 'subdistrict_id', 'status_update', 'deleted_at', 'created_at'
                 ])
-                ->filter(function ($building) {
-                    return !empty($building->name) || !empty($building->nama_gedung);
-                })
-                ->unique(function ($building) {
-                    return implode('|', [
-                        $this->normalizeLookupValue($this->buildingDisplayName($building)),
-                        $this->normalizeLookupValue($this->buildingAddressLine($building)),
-                        $building->city_id,
-                    ]);
-                })
                 ->map(fn (Building $building) => $this->formatBuildingForSurveyWizard($building))
                 ->values();
         });
@@ -1861,6 +1897,11 @@ class SurveyWizardController extends Controller
             }
 
             DB::commit();
+
+            // PIC baru (Tambah Kontak baru) langsung ikut saat daftar kontak customer dimuat ulang.
+            if ($addNewContact) {
+                $this->forgetSurveyWizardContactCaches((int) $customerId);
+            }
 
             Cache::put($submissionCacheKey, $survey->id, now()->addMinutes(10));
 

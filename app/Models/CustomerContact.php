@@ -32,6 +32,24 @@ class CustomerContact extends Model
                 ]);
             }
         });
+
+        // Daftar PIC Survey Wizard di-cache 5 menit per customer. PIC yang dibuat/diubah dari
+        // jalur mana pun (termasuk "Tambah Kontak baru" saat survey disimpan) harus langsung
+        // muncul saat daftar dimuat ulang (jawaban klien 26 Nov 2026).
+        static::saved(function ($contact) {
+            static::forgetSurveyWizardContactsCache($contact->customer_id, $contact->getOriginal('customer_id'));
+        });
+        static::deleted(function ($contact) {
+            static::forgetSurveyWizardContactsCache($contact->customer_id);
+        });
+    }
+
+    public static function forgetSurveyWizardContactsCache(...$customerIds): void
+    {
+        foreach (array_unique(array_filter(array_map('intval', $customerIds))) as $customerId) {
+            \Illuminate\Support\Facades\Cache::forget("survey-wizard:contacts:{$customerId}");
+            \Illuminate\Support\Facades\Cache::forget("survey-wizard:contacts:v2:{$customerId}");
+        }
     }
 
     protected $fillable = [

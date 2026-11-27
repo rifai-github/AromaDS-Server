@@ -1177,6 +1177,62 @@ $(document).ready(function() {
     let currentStep = 1;
     const totalSteps = 6;
 
+    // Jawaban klien 26 Nov 2026: PIC baru yang diisi di step 3 disimpan di state wizard, jadi
+    // Next -> Previous mengembalikannya (checkbox "Tambah Kontak baru" tetap tercentang dan isian
+    // terisi lagi). PIC-nya baru dibuat di database saat survey disimpan.
+    let wizardNewContact = null;
+
+    function rememberWizardNewContact() {
+        if (!$('#add_new_contact').is(':checked')) {
+            wizardNewContact = null;
+            return;
+        }
+
+        wizardNewContact = {
+            salutation: $('#new_contact_salutation').val() || '',
+            name: ($('#new_contact_name').val() || '').trim(),
+            email: ($('#new_contact_email').val() || '').trim(),
+            phone: ($('#new_contact_phone').val() || '').trim(),
+            position: $('#new_contact_position').val() || ''
+        };
+    }
+
+    function restoreWizardNewContact() {
+        if (!wizardNewContact || !wizardNewContact.name) {
+            return;
+        }
+
+        if (!$('#add_new_contact').is(':checked')) {
+            $('#add_new_contact').prop('checked', true).trigger('change');
+        } else {
+            $('#new_contact_fields').show();
+            $('#contact_id').closest('.form-group').hide();
+        }
+
+        const fill = function(selector, value, isSelect) {
+            const $field = $(selector);
+            if (!$field.length || !value || $field.val()) {
+                return;
+            }
+            $field.val(value);
+            if (isSelect) {
+                $field.trigger('change.select2');
+            }
+        };
+        fill('#new_contact_salutation', wizardNewContact.salutation, true);
+        fill('#new_contact_name', wizardNewContact.name, false);
+        fill('#new_contact_email', wizardNewContact.email, false);
+        fill('#new_contact_phone', wizardNewContact.phone, false);
+        fill('#new_contact_position', wizardNewContact.position, true);
+
+        let $hint = $('#new_contact_pending_hint');
+        if (!$hint.length) {
+            $hint = $('<small id="new_contact_pending_hint" class="form-text text-success d-block mt-1"></small>');
+            $('#add_new_contact').closest('.form-check').append($hint);
+        }
+        $hint.text('PIC baru dipilih: ' + wizardNewContact.name + ' (tersimpan bersama survey).');
+    }
+
     // Initialize Select2 with proper loading check
     function initializeSelect2() {
         if (typeof $.fn.select2 !== 'undefined') {
@@ -1306,6 +1362,18 @@ $(document).ready(function() {
         }
     }, 3000);
     
+    // Jawaban klien 26 Nov 2026: daftar gedung memuat SEMUA gedung (nama boleh sama, yang beda
+    // lokasi detailnya), jadi teks opsi = nama + alamat + kota supaya bisa dibedakan & dicari.
+    // Nama murni disimpan di data-name untuk ringkasan / form.
+    function surveyBuildingOptionLabel(building, fallbackName) {
+        return (building && building.label) || fallbackName || 'Unnamed Building';
+    }
+
+    function surveyBuildingNameOf($option) {
+        if (!$option || !$option.length) return '';
+        return $option.attr('data-name') || $option.text() || '';
+    }
+
     // Function to load buildings based on customer
     function loadAllBuildings() {
         console.log('Loading buildings for Step 4...');
@@ -1331,8 +1399,9 @@ $(document).ready(function() {
                 $.each(data, function(index, building) {
                     // Use nama_gedung if name is null/empty
                     const buildingName = building.name || building.nama_gedung || 'Unnamed Building';
-                    const option = $('<option value="' + building.id + '">' + buildingName + '</option>');
-                    
+                    const option = $('<option></option>').val(building.id).text(surveyBuildingOptionLabel(building, buildingName));
+                    option.attr('data-name', buildingName);
+
                     // Add data attributes for summary display
                     option.attr('data-address1', building.alamat_1 || '');
                     option.attr('data-address2', building.alamat_2 || '');
@@ -1385,7 +1454,11 @@ $(document).ready(function() {
         if (!validateCurrentStep()) {
             return false;
         }
-        
+
+        if (currentStep === 3) {
+            rememberWizardNewContact();
+        }
+
         if (currentStep < totalSteps) {
             // Hide current step
             $('#step-' + currentStep).hide();
@@ -1443,6 +1516,10 @@ $(document).ready(function() {
             // Reinitialize Select2 for new step
             setTimeout(function() {
                 initializeSelect2();
+
+                if (currentStep === 3) {
+                    restoreWizardNewContact();
+                }
             }, 100);
             
             console.log('Moved to step:', currentStep);
@@ -1703,7 +1780,7 @@ $(document).ready(function() {
             const selectedBuildingId = $('#new_building_name').val();
             if (selectedBuildingId) {
                 // Building selected from dropdown - use data attributes
-                buildingName = $('#new_building_name option:selected').text() || '';
+                buildingName = surveyBuildingNameOf($('#new_building_name option:selected'));
                 address1 = $('#new_building_name option:selected').data('address1') || '';
                 address2 = $('#new_building_name option:selected').data('address2') || '';
                 province = $('#new_building_name option:selected').data('province') || '';
@@ -1713,7 +1790,7 @@ $(document).ready(function() {
                 postalCode = $('#new_building_name option:selected').data('postal-code') || '';
             } else {
                 // New building form - use form fields
-                buildingName = $('#new_building_name option:selected').text() || $('#new_building_name').val();
+                buildingName = surveyBuildingNameOf($('#new_building_name option:selected')) || $('#new_building_name').val();
                 address1 = $('#new_building_location_detail').val();
                 address2 = '';
                 province = $('#master_building_province option:selected').text();
@@ -1724,7 +1801,7 @@ $(document).ready(function() {
             }
         } else {
             // Use existing building data
-            buildingName = $('#building_id option:selected').text();
+            buildingName = surveyBuildingNameOf($('#building_id option:selected'));
             address1 = $('#building_id option:selected').data('address1') || '';
             address2 = $('#building_id option:selected').data('address2') || '';
             province = $('#building_id option:selected').data('province') || '';
@@ -2062,8 +2139,9 @@ $(document).ready(function() {
                     $.each(data, function(index, building) {
                         // Use nama_gedung if name is null/empty
                         const buildingName = building.name || building.nama_gedung || 'Unnamed Building';
-                        const option = $('<option value="' + building.id + '">' + buildingName + '</option>');
-                        
+                        const option = $('<option></option>').val(building.id).text(surveyBuildingOptionLabel(building, buildingName));
+                        option.attr('data-name', buildingName);
+
                         // Add data attributes for summary
                         option.attr('data-address1', building.alamat_1 || '');
                         option.attr('data-address2', building.alamat_2 || '');
@@ -2124,7 +2202,7 @@ $(document).ready(function() {
             if ($option.length && $option.is('[data-address1]')) {
                 displaySelectedAddress({
                     id: buildingId,
-                    name: $option.text(),
+                    name: surveyBuildingNameOf($option),
                     alamat_1: $option.attr('data-address1') || '',
                     alamat_2: $option.attr('data-address2') || '',
                     kode_pos: $option.attr('data-postal-code') || '',
@@ -3028,6 +3106,7 @@ $(document).on('click', '#save_master_building', function() {
                 // Use nama_gedung if name is null/empty
                 const buildingName = response.building.name || response.building.nama_gedung || 'Unnamed Building';
                 const newOption = $('<option value="' + response.building.id + '">' + buildingName + '</option>');
+                newOption.attr('data-name', buildingName);
                 
                 // Add data attributes for summary display
                 newOption.attr('data-address1', response.building.address1 || '');
@@ -3093,8 +3172,10 @@ $(document).on('click', '#save_master_building', function() {
                             
                             $.each(sortedAllBuildings, function(index, building) {
                                 const buildingName = building.name || building.nama_gedung || 'Unnamed Building';
-                                const displayName = (building.id == response.building.id) ? '🆕 ' + buildingName : buildingName;
-                                const option = $('<option value="' + building.id + '">' + displayName + '</option>');
+                                const buildingLabel = surveyBuildingOptionLabel(building, buildingName);
+                                const displayName = (building.id == response.building.id) ? '🆕 ' + buildingLabel : buildingLabel;
+                                const option = $('<option></option>').val(building.id).text(displayName);
+                                option.attr('data-name', buildingName);
                                 
                                 // Add data attributes
                                 option.attr('data-address1', building.alamat_1 || '');
@@ -3150,10 +3231,12 @@ $(document).on('click', '#save_master_building', function() {
                         $.each(sortedData, function(index, building) {
                             // Use nama_gedung if name is null/empty
                             const buildingName = building.name || building.nama_gedung || 'Unnamed Building';
-                            
+                            const buildingLabel = surveyBuildingOptionLabel(building, buildingName);
+
                             // Highlight new building
-                            const displayName = (building.id == newBuildingId) ? '🆕 ' + buildingName : buildingName;
-                            const option = $('<option value="' + building.id + '">' + displayName + '</option>');
+                            const displayName = (building.id == newBuildingId) ? '🆕 ' + buildingLabel : buildingLabel;
+                            const option = $('<option></option>').val(building.id).text(displayName);
+                            option.attr('data-name', buildingName);
                             
                             // Add data attributes for summary
                             option.attr('data-address1', building.alamat_1 || '');
