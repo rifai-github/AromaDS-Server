@@ -1704,7 +1704,15 @@
                                             @endphp
                                             <tr>
                                                 <td><input type="checkbox" class="billing-group-checkbox" value="{{ $billingGroup->id }}"></td>
-                                                <td>{{ $billingGroup->id }}</td>
+                                                {{-- QA 26 Nov 2026: nomor transaksi BG (ADS-BIL-MM/XXXX) di kolom Billing Id. --}}
+                                                <td>
+                                                    @if($billingGroup->transaction_number)
+                                                        <div class="fw-bold">{{ $billingGroup->transaction_number }}</div>
+                                                        <small class="text-muted">#{{ $billingGroup->id }}</small>
+                                                    @else
+                                                        {{ $billingGroup->id }}
+                                                    @endif
+                                                </td>
                                                 <td>{{ $contract->contract_number ?? '-' }}</td>
                                                 <td>{{ $npwp }}</td>
                                                 <td>{{ $nitku }}</td>
@@ -1802,7 +1810,7 @@
                                             foreach($contract->billingGroups as $bg) {
                                                 foreach($bg->buildings as $bgBuilding) {
                                                     $billingGroupByBuildingId[$bgBuilding->id] =
-                                                        $bg->billing_group_name ?: ('Billing Group #' . $bg->id);
+                                                        $bg->display_transaction_number;
                                                 }
                                             }
 

@@ -4829,6 +4829,8 @@ class CatalystMasterDataImporter
             ], array_filter([
                 'customer_id' => $contract->customer_id ?? null,
                 'billing_group_name' => $billingCode ?: ('Billing Group ' . $contractNo),
+                // QA 26 Nov 2026: nomor transaksi BG = kode Catalyst (ADS-BIL-MM/XXXX).
+                'transaction_number' => $billingCode && preg_match(\App\Models\Finance\BillingGroup::TRANSACTION_NUMBER_PATTERN, $billingCode) ? $billingCode : null,
                 'billing_frequency' => 'monthly',
                 'billing_start_date' => $contract->start_date ?? null,
                 'billing_end_date' => $contract->end_date ?? null,

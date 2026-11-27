@@ -17,8 +17,11 @@ class BillingGroup extends Model
 {
     use HasBillingTaxIdentity, HasFactory, SoftDeletes;
 
+    public const TRANSACTION_NUMBER_PATTERN = '/^ADS-BIL-\d{2}\/\d+$/';
+
     protected $fillable = [
         'billing_group_name',
+        'transaction_number',
         'customer_id',      // Parent dari Billing Group adalah Customer
         'contract_id',      // Contract yang menggunakan billing group ini (nullable, karena bisa reuse)
         'billing_frequency',
@@ -53,6 +56,56 @@ class BillingGroup extends Model
         'billing_amount' => 'decimal:2',
         'is_active' => 'boolean',
     ];
+
+    /**
+     * QA 26 Nov 2026: setiap Billing Group punya nomor transaksi ADS-BIL-MM/XXXX. Kode Catalyst
+     * dipakai apa adanya (nama yang sudah berformat itu); Billing Group baru dari ERP diberi nomor
+     * berikutnya: MM = bulan dibuat, XXXX = urutan tertinggi prefix itu + 1 (tanpa reset tahunan,
+     * sama seperti nomor Catalyst). Salinan (pakai BG lama, switching, merge) membawa nomornya.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $billingGroup) {
+            if (filled($billingGroup->transaction_number) || ! static::supportsTransactionNumber()) {
+                return;
+            }
+
+            $name = trim((string) $billingGroup->billing_group_name);
+            $billingGroup->transaction_number = preg_match(self::TRANSACTION_NUMBER_PATTERN, $name)
+                ? $name
+                : static::nextTransactionNumber();
+        });
+    }
+
+    public static function supportsTransactionNumber(): bool
+    {
+        static $supported = null;
+
+        if (app()->runningUnitTests()) {
+            return \Illuminate\Support\Facades\Schema::hasColumn('billing_groups', 'transaction_number');
+        }
+
+        return $supported ??= \Illuminate\Support\Facades\Schema::hasColumn('billing_groups', 'transaction_number');
+    }
+
+    public static function nextTransactionNumber(?Carbon $date = null): string
+    {
+        $prefix = 'ADS-BIL-'.($date ?? now())->format('m').'/';
+
+        $max = static::withTrashed()
+            ->where('transaction_number', 'like', $prefix.'%')
+            ->lockForUpdate()
+            ->pluck('transaction_number')
+            ->map(fn ($number) => (int) substr((string) $number, strlen($prefix)))
+            ->max() ?? 0;
+
+        return $prefix.str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    public function getDisplayTransactionNumberAttribute(): string
+    {
+        return $this->transaction_number ?: ($this->billing_group_name ?: ('Billing Group #'.$this->id));
+    }
 
     // Relationships
     public function customer()

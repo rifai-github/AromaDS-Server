@@ -36,6 +36,9 @@
                                 <i class="fas fa-edit me-2"></i>Edit Billing Group
                             </h3>
                             <p class="mb-0 mt-1" style="font-size: 0.9rem; opacity: 0.9;">
+                                @if($billingGroup->transaction_number && $billingGroup->transaction_number !== $billingGroup->billing_group_name)
+                                    {{ $billingGroup->transaction_number }} &middot;
+                                @endif
                                 {{ $billingGroup->billing_group_name }}
                             </p>
                         </div>

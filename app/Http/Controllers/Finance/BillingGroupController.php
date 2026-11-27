@@ -1182,6 +1182,7 @@ class BillingGroupController extends Controller
                 
                 $billingGroup = BillingGroup::create([
                     'billing_group_name' => $existingBg->billing_group_name,
+                    'transaction_number' => $existingBg->transaction_number,
                     'contract_id' => $contract->id,
                     'customer_id' => $contract->customer_id,
                     'billing_frequency' => $existingBg->billing_frequency,
@@ -1391,6 +1392,7 @@ class BillingGroupController extends Controller
             // (In this implementation, we create a new billing group with same settings)
             $newBillingGroup = BillingGroup::create([
                 'billing_group_name' => $billingGroup->billing_group_name,
+                'transaction_number' => $billingGroup->transaction_number,
                 'contract_id' => $contract->id,
                 'billing_frequency' => $billingGroup->billing_frequency,
                 'billing_start_date' => $billingGroup->billing_start_date,

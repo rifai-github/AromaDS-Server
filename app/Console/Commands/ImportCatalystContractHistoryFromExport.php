@@ -254,6 +254,7 @@ class ImportCatalystContractHistoryFromExport extends Command
             $payload = $this->onlyColumns(array_filter([
                 'customer_id' => $customerId,
                 'billing_group_name' => $billingCode,
+                'transaction_number' => $billingCode && preg_match(\App\Models\Finance\BillingGroup::TRANSACTION_NUMBER_PATTERN, (string) $billingCode) ? $billingCode : null,
                 'billing_frequency' => 'monthly',
                 'billing_start_date' => $contract->start_date ?? ($resolvedContract['start_date'] ?? null),
                 'billing_end_date' => $contract->end_date ?? ($resolvedContract['end_date'] ?? null),

@@ -114,6 +114,8 @@ class CatalystBillingGroupSplitRepair
                 $payload = array_merge($payload, [
                     'contract_id' => $plan['contract_id'],
                     'billing_group_name' => $missing['code'],
+                    // Jangan mewarisi nomor transaksi BG templat: nomornya = kodenya sendiri.
+                    'transaction_number' => preg_match(\App\Models\Finance\BillingGroup::TRANSACTION_NUMBER_PATTERN, (string) $missing['code']) ? $missing['code'] : null,
                     'billing_amount' => $missing['amount'],
                     'is_active' => true,
                     'pic_name' => $this->clean($legacy->Attn ?? null),
