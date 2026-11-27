@@ -206,7 +206,13 @@ class UnitOnWall extends Model
      * (5fc9b84), and units whose room was moved to another contract by Contract Switching,
      * carry no matching contract_id. Tightening unconditionally would make those units
      * unreachable to the very processes that exist to take them off the wall, so when
-     * nothing in the candidate set carries a matching contract the query is left untouched.
+     * nothing in the candidate set carries a matching contract the query stays open.
+     *
+     * "Open" no longer means "anything": a unit whose contract_id names ANOTHER live contract
+     * (outside the renewal lineage and Contract Switching sources, see
+     * Contract::unitOwnershipLineageIds()) or a trial unit of another SQ is proven to belong
+     * elsewhere and is still dropped (scopeNotOwnedByOtherSource()). Contract Switching rooms
+     * keep working because the switching source contract is part of that lineage.
      */
     public function scopeScopedToContracts($query, array $contractIds)
     {
@@ -221,25 +227,99 @@ class UnitOnWall extends Model
             return $query;
         }
 
-        if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
-            // QA 26 Nov 2026 (Ruang-6 BLP-CA/26-11/0004): saat fail-open, unit trial dari SQ LAIN
-            // (DIS...0007 dipasang trial BLP-SQ/26-11/0003) ikut tampil di kartu service kontrak
-            // dari BLP-SQ/26-11/0004. Unit tanpa kontrak yang dipasang job Install Free milik SQ
-            // lain bukan unit kontrak ini.
-            $quotationNumbers = Contract::withTrashed()
-                ->with('quotation')
-                ->whereIn('id', $contractIds)
-                ->get()
-                ->map(fn ($contract) => $contract->quotation?->quotation_number)
-                ->filter()
-                ->unique()
-                ->values()
-                ->all();
+        // Rantai renewal + sumber Contract Switching dihitung "kontrak yang sama": unit
+        // kontrak sumber switching tetap membawa contract_id lama.
+        $contractIds = Contract::unitOwnershipLineageIds($contractIds);
 
-            return $query->excludingOtherQuotationTrials($quotationNumbers);
+        if (! (clone $query)->whereIn('contract_id', $contractIds)->exists()) {
+            return $query->notOwnedByOtherSource($contractIds);
         }
 
         return $query->whereIn('contract_id', $contractIds);
+    }
+
+    /**
+     * Jalur fail-open scopedToContracts(): unit tanpa contract_id yang cocok tetap ikut
+     * (data lama / ruangan hasil switching), KECUALI unit yang terbukti milik sumber lain:
+     *
+     * - QA 26 Nov 2026 (Ruang-6 BLP-CA/26-11/0004): unit trial dari SQ LAIN (DIS...0007
+     *   dipasang trial BLP-SQ/26-11/0003) ikut tampil di kartu service kontrak dari
+     *   BLP-SQ/26-11/0004.
+     * - QA 27 Nov 2026 (Ruang-4 ADS-CSR/26-11/0001, kontrak BLP-CA/26-11/0006): unit
+     *   DIS005S2611230016 ber-contract_id BLP-CA/26-11/0004 (kontrak lain, SQ lain) ikut
+     *   tampil di samping DIS005S2611230015 milik kontrak ini.
+     *
+     * @param  int[]  $contractIds  sudah diperluas lewat Contract::unitOwnershipLineageIds()
+     */
+    public function scopeNotOwnedByOtherSource($query, array $contractIds)
+    {
+        $contractIds = collect($contractIds)->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+        if (empty($contractIds)) {
+            return $query;
+        }
+
+        $quotationNumbers = Contract::withTrashed()
+            ->with('quotation')
+            ->whereIn('id', $contractIds)
+            ->get()
+            ->map(fn ($contract) => $contract->quotation?->quotation_number)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $query
+            ->excludingUnitsBoundToOtherContracts($contractIds)
+            ->excludingOtherQuotationTrials($quotationNumbers);
+    }
+
+    /**
+     * Buang unit yang contract_id-nya menunjuk kontrak HIDUP di luar daftar. Unit tanpa
+     * contract_id, atau yang kontraknya sudah dihapus, tidak dianggap milik siapa pun.
+     *
+     * @param  int[]  $contractIds
+     */
+    public function scopeExcludingUnitsBoundToOtherContracts($query, array $contractIds)
+    {
+        $contractIds = array_values(array_filter(array_map('intval', $contractIds)));
+        if (empty($contractIds)) {
+            return $query;
+        }
+
+        $table = $query->getModel()->getTable();
+
+        return $query->whereNot(function ($unitQuery) use ($contractIds, $table) {
+            $unitQuery->whereNotNull("{$table}.contract_id")
+                ->whereNotIn("{$table}.contract_id", $contractIds)
+                ->whereIn("{$table}.contract_id", static::liveContractIdsQuery());
+        });
+    }
+
+    /**
+     * id kontrak yang belum dihapus. Dibuat lewat query builder biasa (bukan scope SoftDeletes)
+     * supaya tetap jalan di skema tanpa contracts.deleted_at (fixture test lama).
+     */
+    protected static function liveContractIdsQuery()
+    {
+        $query = \Illuminate\Support\Facades\DB::table('contracts')->select('id');
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('contracts', 'deleted_at')) {
+            $query->whereNull('deleted_at');
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param  int[]  $contractIds  sudah diperluas lewat Contract::unitOwnershipLineageIds()
+     */
+    public function isBoundToOtherContract(array $contractIds): bool
+    {
+        if (! $this->contract_id || in_array((int) $this->contract_id, array_map('intval', $contractIds), true)) {
+            return false;
+        }
+
+        return static::liveContractIdsQuery()->where('id', $this->contract_id)->exists();
     }
 
     /**

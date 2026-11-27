@@ -1649,6 +1649,40 @@ class JobAdviceController extends Controller
             ->exists();
     }
 
+    /**
+     * Unit aktif di ruangan yang boleh dianggap "unit sudah terpasang" untuk JA ini.
+     *
+     * Dulu cukup first() per room_id: di ruangan yang memegang unit beberapa kontrak/SQ
+     * (QA 27 Nov 2026, Ruang-4: DIS...0016 milik BLP-CA/26-11/0004 dan DIS...0015 trial
+     * BLP-SQ/26-11/0133) unit kontrak lain bisa tertaut ke JA kontrak baru. Unit yang
+     * terikat kontrak lain di luar rantai renewal/switching, atau unit trial SQ lain,
+     * dibuang; rental yang sama didahulukan.
+     */
+    private function existingUnitOnWallForJobAdviceRoom(\App\Models\JobAdvice $jobAdvice, int $roomId, $rentalId = null): ?\App\Models\UnitOnWall
+    {
+        $jobAdvice->loadMissing(['contract.quotation', 'quotation']);
+
+        $ownContractId = $jobAdvice->contract_id ?: $jobAdvice->quotation?->existing_contract_id;
+        $ownershipContractIds = Contract::unitOwnershipLineageIds($ownContractId);
+        $quotationNumbers = array_values(array_filter([
+            $jobAdvice->quotation?->quotation_number,
+            $jobAdvice->contract?->quotation?->quotation_number,
+        ]));
+
+        return \App\Models\UnitOnWall::where('room_id', $roomId)
+            ->whereIn('status', $this->activeUnitOnWallStatuses())
+            ->orderBy('id')
+            ->get()
+            ->reject(fn ($unit) => $unit->isBoundToOtherContract($ownershipContractIds))
+            ->reject(fn ($unit) => $unit->belongsToOtherQuotationTrial($quotationNumbers))
+            ->sortBy(fn ($unit) => [
+                $rentalId && (int) $unit->rental_id === (int) $rentalId ? 0 : 1,
+                $unit->contract_id && in_array((int) $unit->contract_id, $ownershipContractIds, true) ? 0 : 1,
+                (int) $unit->id,
+            ])
+            ->first();
+    }
+
     private function activeUnitOnWallStatuses(): array
     {
         return ['active', 'installed', 'on_wall', 'on wall', 'onwall'];
@@ -1838,9 +1872,7 @@ class JobAdviceController extends Controller
         // UnitOnWall uses room_id, so we need to get room_id from contractRoom or quotationRoom
         $roomId = $room->id ?? null;
         if ($roomId) {
-            $existingUnit = \App\Models\UnitOnWall::where('room_id', $roomId)
-                ->whereIn('status', $this->activeUnitOnWallStatuses())
-                ->first();
+            $existingUnit = $this->existingUnitOnWallForJobAdviceRoom($jobAdvice, (int) $roomId, $rental->id ?? null);
             
             if ($existingUnit) {
                 if ($this->hasCompletedInstallSourceForJobAdviceRoom($jobAdvice, $contractRoom, $quotationRoom, $room, $existingUnit)) {

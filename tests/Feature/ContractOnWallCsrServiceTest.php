@@ -237,6 +237,119 @@ class ContractOnWallCsrServiceTest extends TestCase
         ]);
     }
 
+    /**
+     * QA 27 Nov 2026 (Ruang-4, Customer Testing Indo): unit DIS...0016 terikat kontrak
+     * BLP-CA/26-11/0004; SQ baru BLP-SQ/26-11/0133 memasang trial di ruangan yang sama dan
+     * menjadi kontrak BLP-CA/26-11/0006. Unit yang terikat kontrak lain bukan "unit masih di
+     * lokasi" milik kontrak baru.
+     */
+    public function test_it_does_not_take_a_unit_bound_to_another_contract_as_the_on_wall_unit(): void
+    {
+        $this->seedSecondQuotationContractInSameRoom();
+        DB::table('unit_on_walls')->where('id', 1)->update(['contract_id' => 1, 'install_job_schedule_id' => 10]);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract(Contract::findOrFail(2), 7, 'approved');
+
+        $this->assertSame(0, $createdCount);
+        $this->assertDatabaseMissing('job_advice_rooms', ['existing_unit_on_wall_id' => 1]);
+    }
+
+    public function test_it_links_the_new_quotation_trial_unit_not_the_other_contract_unit(): void
+    {
+        $this->seedSecondQuotationContractInSameRoom();
+        DB::table('unit_on_walls')->where('id', 1)->update(['contract_id' => 1, 'install_job_schedule_id' => 10]);
+        DB::table('unit_on_walls')->insert([
+            'id' => 2,
+            'contract_id' => null,
+            'install_job_schedule_id' => 20,
+            'customer_id' => 1,
+            'building_id' => 1,
+            'room_id' => 1,
+            'serial_number_id' => 11,
+            'serial_number' => 'SN-ONWALL-002',
+            'status' => 'active',
+            'room_name' => 'Lobby',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $createdCount = app(ContractOnWallCsrService::class)->createForContract(Contract::findOrFail(2), 7, 'approved');
+
+        $this->assertSame(1, $createdCount);
+        $this->assertDatabaseHas('job_advice_rooms', ['contract_rental_id' => 3, 'existing_unit_on_wall_id' => 2]);
+        $this->assertDatabaseMissing('job_advice_rooms', ['existing_unit_on_wall_id' => 1]);
+    }
+
+    private function seedSecondQuotationContractInSameRoom(): void
+    {
+        $this->seedContractWithOnWallRoom();
+
+        DB::table('quotations')->insert([
+            'id' => 2,
+            'quotation_number' => 'JKT-SQ/26-05/0002',
+            'survey_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contracts')->insert([
+            'id' => 2,
+            'contract_number' => 'JKT-CA/26-05/0002',
+            'customer_id' => 1,
+            'quotation_id' => 2,
+            'contract_status' => 'active',
+            'first_service_date' => '2026-05-10',
+            'start_date' => '2026-05-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rooms')->insert([
+            'id' => 2,
+            'contract_id' => 2,
+            'room_id' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('contract_rentals')->insert([
+            'id' => 3,
+            'contract_id' => 2,
+            'master_rental_id' => 1,
+            'room_id' => 1,
+            'rental_alias' => 'Aroma On Wall',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'total_price' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        // Trial SQ baru di ruangan yang sama sudah selesai dipasang.
+        DB::table('job_advices')->insert([
+            'id' => 20,
+            'job_advice_number' => 'JKT-JA/26-05/0002',
+            'type' => 'install_free',
+            'company_name' => 'Group Hiro',
+            'quotation_id' => 2,
+            'customer_id' => 1,
+            'status' => 'approved',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('job_schedules')->insert([
+            'id' => 20,
+            'job_number' => 'JKT-IF/26-05/0002',
+            'type' => 'install_free',
+            'status' => 'done_job',
+            'job_advice_id' => 20,
+            'building_id' => 1,
+            'room_id' => 1,
+            'room_name' => 'Lobby',
+            'company_name' => 'Group Hiro',
+            'quotation_number' => 'JKT-SQ/26-05/0002',
+            'schedule_date' => '2026-05-04',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     private function createSchema(): void
     {
         Schema::create('customers', function (Blueprint $table) {
@@ -343,6 +456,8 @@ class ContractOnWallCsrServiceTest extends TestCase
 
         Schema::create('unit_on_walls', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('contract_id')->nullable();
+            $table->foreignId('install_job_schedule_id')->nullable();
             $table->foreignId('customer_id')->nullable();
             $table->foreignId('building_id')->nullable();
             $table->foreignId('room_id')->nullable();

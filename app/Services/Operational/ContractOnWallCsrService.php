@@ -186,6 +186,9 @@ class ContractOnWallCsrService
         $roomName = trim((string) ($room->room_name ?? ''));
         $normalizedRoomName = mb_strtolower(preg_replace('/\s+/', ' ', $roomName));
         $buildingId = $room->building_id ?? null;
+        $ownershipContractIds = Contract::unitOwnershipLineageIds(
+            $this->unitOnWallInstallSourceContracts($contract)->pluck('id')->all()
+        );
 
         return UnitOnWall::query()
             ->whereIn('status', self::ACTIVE_UNIT_STATUSES)
@@ -207,6 +210,10 @@ class ContractOnWallCsrService
             // (BLP-SQ/26-11/0003) dulu ikut terpilih karena cek di bawah hanya memastikan ADA
             // install SQ kontrak di ruangan itu, bukan bahwa unit INI yang dipasangnya.
             ->reject(fn (UnitOnWall $unitOnWall) => $unitOnWall->belongsToOtherQuotationTrial($this->installSourceQuotationNumbers($contract)))
+            // QA 27 Nov 2026 (Ruang-4 BLP-CA/26-11/0006): unit DIS...0016 terikat ke kontrak
+            // BLP-CA/26-11/0004 (SQ lain). Unit yang contract_id-nya kontrak lain di luar rantai
+            // renewal/switching kontrak ini bukan unit kontrak ini.
+            ->reject(fn (UnitOnWall $unitOnWall) => $unitOnWall->isBoundToOtherContract($ownershipContractIds))
             ->sortBy(fn (UnitOnWall $unitOnWall) => in_array(
                 $unitOnWall->installJobSchedule?->quotation_number,
                 $this->installSourceQuotationNumbers($contract),

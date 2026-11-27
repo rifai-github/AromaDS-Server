@@ -848,6 +848,76 @@ class Contract extends Model
     }
 
     /**
+     * Semua kontrak yang unit-nya sah dianggap "unit kontrak ini": kontrak itu sendiri,
+     * pendahulu renewal-nya (quotations.existing_contract_id dan contract_renewals yang
+     * completed), serta kontrak SUMBER Contract Switching (executed/completed) - switching
+     * hanya memindah customer_id unit, contract_id-nya tetap kontrak lama
+     * (ContractSwitching::reassignActiveUnitsOnWall()). Ditelusuri berulang, jadi
+     * switching dari kontrak hasil renewal (atau sebaliknya) ikut tercakup.
+     *
+     * Dipakai UnitOnWall::scopeScopedToContracts() untuk membedakan unit "milik rantai
+     * ini" dari unit yang terikat ke kontrak LAIN di ruangan yang sama (QA 27 Nov 2026,
+     * ADS-CSR/26-11/0001: unit ...0016 milik BLP-CA/26-11/0004 ikut tampil di CSR
+     * BLP-CA/26-11/0006).
+     *
+     * @param  int|int[]|null  $contractIds
+     * @return int[]
+     */
+    public static function unitOwnershipLineageIds($contractIds): array
+    {
+        $pending = collect(is_array($contractIds) ? $contractIds : [$contractIds])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $ids = [];
+        $hasQuotationLineage = \Illuminate\Support\Facades\Schema::hasTable('quotations')
+            && \Illuminate\Support\Facades\Schema::hasColumn('quotations', 'existing_contract_id');
+        $hasSwitchings = \Illuminate\Support\Facades\Schema::hasTable('contract_switchings');
+        $switchingsSoftDelete = $hasSwitchings && \Illuminate\Support\Facades\Schema::hasColumn('contract_switchings', 'deleted_at');
+        $hasRenewals = \Illuminate\Support\Facades\Schema::hasTable('contract_renewals')
+            && \Illuminate\Support\Facades\Schema::hasColumn('contract_renewals', 'new_contract_id');
+
+        while (! empty($pending) && count($ids) < 100) {
+            $current = (int) array_shift($pending);
+            if ($current <= 0 || in_array($current, $ids, true)) {
+                continue;
+            }
+
+            $ids[] = $current;
+            $predecessors = $hasQuotationLineage ? array_slice(static::renewalLineageIds($current), 1) : [];
+
+            if ($hasSwitchings) {
+                $predecessors = array_merge($predecessors, \Illuminate\Support\Facades\DB::table('contract_switchings')
+                    ->where('new_contract_id', $current)
+                    ->whereIn('status', ['executed', 'completed'])
+                    ->when($switchingsSoftDelete, fn ($query) => $query->whereNull('deleted_at'))
+                    ->pluck('old_contract_id')
+                    ->all());
+            }
+
+            if ($hasRenewals) {
+                $predecessors = array_merge($predecessors, \Illuminate\Support\Facades\DB::table('contract_renewals')
+                    ->where('new_contract_id', $current)
+                    ->where('status', 'completed')
+                    ->pluck('contract_id')
+                    ->all());
+            }
+
+            foreach ($predecessors as $predecessorId) {
+                $predecessorId = (int) $predecessorId;
+                if ($predecessorId > 0 && ! in_array($predecessorId, $ids, true)) {
+                    $pending[] = $predecessorId;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Get all job schedules through job advices
      */
     public function jobSchedules()

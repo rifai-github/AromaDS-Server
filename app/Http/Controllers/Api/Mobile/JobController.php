@@ -2190,6 +2190,16 @@ class JobController extends Controller
                     $swapUnitOnWallQuery->where('room_name', $roomName);
                 }
 
+                // Tetap lebar (unit lama/tanpa kontrak ikut), tetapi unit yang terbukti milik
+                // kontrak LAIN atau trial SQ lain dibuang (QA 27 Nov 2026, ADS-CSR/26-11/0001:
+                // DIS005S2611230016 milik BLP-CA/26-11/0004 ikut tampil di CSR BLP-CA/26-11/0006).
+                $swapContractId = $room->contractRoom?->contract_id ?? $job->jobAdvice?->contract_id;
+                if ($swapContractId) {
+                    $swapUnitOnWallQuery->notOwnedByOtherSource(
+                        \App\Models\Contract::unitOwnershipLineageIds($swapContractId)
+                    );
+                }
+
                 $swapUnitOnWalls = $swapUnitOnWallQuery->with(['product.productType', 'product.productCategory', 'serialNumber'])->get();
 
                 foreach ($swapUnitOnWalls as $unit) {
@@ -2349,6 +2359,7 @@ class JobController extends Controller
             // sehingga kartu VirusGuard ikut menampilkan diffuser milik rental ADS 250.
             $products = $this->narrowProductsToCardRental($products, $roomGroup, $displayRoom);
             $products = $this->narrowProductsToCardRentalByMaterialIssue($products, (int) $specificJobScheduleId, $displayRoom, $roomName);
+            $products = $this->withoutUnitMaterialsForServiceJob($job, $products);
 
             return [
                 'id' => $displayRoom->id,
@@ -5001,6 +5012,46 @@ class JobController extends Controller
         }));
 
         return empty($filtered) ? $products : $filtered;
+    }
+
+    /**
+     * Job service (service / service_first / service_routine) tidak memasang unit: unitnya
+     * sudah di dinding. Daftar material kartu (inventory issuing, material issue, BOM rental)
+     * tidak boleh memuat produk unit (kategori/tipe is_unit). QA 27 Nov 2026 (BLP-CSR/26-11/0005): kartu CSR menampilkan
+     * "ADS Dispenser 005S" di samping refill.
+     *
+     * Baris `unit_on_wall` dibiarkan: itu unit yang sudah terpasang (dipakai Ganti Unit untuk
+     * mencocokkan SN lama), bukan material. Install/IR, Install Free, Change Rental, Ganti
+     * Unit, Complain dan Remove tidak tersentuh.
+     */
+    private function withoutUnitMaterialsForServiceJob(JobSchedule $job, array $products): array
+    {
+        if (! $this->isServiceTypeJob($job) || empty($products)) {
+            return $products;
+        }
+
+        // Job Check Unit Only (disimpan sebagai service_*) memang mengecek unit; perilakunya
+        // tidak diubah (lihat aturan label di CLAUDE.md).
+        if ($job->display_type === 'Job Check') {
+            return $products;
+        }
+
+        return array_values(array_filter($products, function ($product) {
+            $source = (string) ($product['source'] ?? '');
+            if (! in_array($source, ['inventory_issuing', 'material_issue', 'rental_component'], true)) {
+                return true;
+            }
+
+            return ! filter_var($product['is_unit'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        }));
+    }
+
+    private function isServiceTypeJob($jobOrType): bool
+    {
+        $type = is_string($jobOrType) ? $jobOrType : ($jobOrType->type ?? '');
+        $normalized = strtolower(trim(str_replace(['-', ' '], '_', (string) $type)));
+
+        return in_array($normalized, ['service', 'servis', 'service_first', 'service_routine', 'csr', 'customer_service_report'], true);
     }
 
     private function narrowProductsToCardRental(array $products, $roomGroup, $displayRoom): array

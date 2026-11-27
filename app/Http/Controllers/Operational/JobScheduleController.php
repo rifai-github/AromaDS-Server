@@ -8878,6 +8878,11 @@ class JobScheduleController extends Controller
                         });
                     }
                 })
+                // QA 27 Nov 2026 (ADS-CSR/26-11/0001, BLP-CSR/26-11/0005): CSR kontrak
+                // BLP-CA/26-11/0006 mencatat "Service by job ..." dan last_service_date ke unit
+                // kontrak BLP-CA/26-11/0004 dan unit trial SQ lain di ruangan yang sama. Hanya
+                // unit kontrak ini (rantai renewal/switching; data lama tanpa kontrak tetap ikut).
+                ->when($jobAdvice->contract_id ?? null, fn ($query, $contractId) => $query->scopedToContracts(Contract::renewalLineageIds($contractId)))
                 ->get();
             
             if ($units->isEmpty()) {
