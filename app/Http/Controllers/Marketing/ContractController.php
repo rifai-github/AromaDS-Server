@@ -21,6 +21,7 @@ use App\Models\UnitOnWall;
 use App\Models\User;
 use App\Services\ContractMergeService;
 use App\Services\Operational\ContractOnWallCsrService;
+use App\Services\Operational\OrphanedJobScheduleCleaner;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -920,6 +921,10 @@ class ContractController extends Controller
         DB::transaction(function () use ($contract) {
             $quotation = $contract->quotation;
 
+            // QA 27 Nov 2026 (BLP-CA/26-11/0005): Job Check yang dibuat saat kontrak disetujui
+            // menempel ke JA trial, jadi tidak ikut hilang bersama JA kontrak. Hapus yang belum dimulai.
+            app(OrphanedJobScheduleCleaner::class)->cleanupForContract($contract, "Contract {$contract->contract_number} dihapus");
+
             $contract->delete();
 
             if ($quotation && $quotation->status === 'contract') {
@@ -967,6 +972,8 @@ class ContractController extends Controller
             $count = DB::transaction(function () use ($contracts) {
                 foreach ($contracts as $contract) {
                     $quotation = $contract->quotation;
+                    // QA 27 Nov 2026: job lanjutan kontrak di JA trial ikut dibersihkan (lihat destroy()).
+                    app(OrphanedJobScheduleCleaner::class)->cleanupForContract($contract, "Contract {$contract->contract_number} dihapus");
                     $contract->delete();
 
                     if ($quotation && $quotation->status === 'contract') {
@@ -2196,17 +2203,33 @@ class ContractController extends Controller
                 ], 400);
             }
 
-            // Update status back to draft
-            $contract->update([
-                'contract_status' => 'draft',
-                'updated_by' => Auth::id(),
-            ]);
+            // QA 27 Nov 2026 (BLP-CA/26-11/0005): Job Check Unit Only yang dibuat saat kontrak
+            // disetujui menempel ke JA trial (contract_id NULL), jadi lolos dari cek JA di atas dan
+            // tertinggal. Kontrak kembali draft = job yang belum dimulai ikut dihapus; approve ulang
+            // membuatnya lagi. Job yang sudah berjalan dibiarkan dan dilaporkan.
+            $cleanup = DB::transaction(function () use ($contract) {
+                $contract->update([
+                    'contract_status' => 'draft',
+                    'updated_by' => Auth::id(),
+                ]);
+
+                return app(OrphanedJobScheduleCleaner::class)
+                    ->cleanupForContract($contract, "Contract {$contract->contract_number} di-unpost ke Draft");
+            });
 
             Log::info("Contract {$contract->contract_number} unposted back to draft by user ".Auth::id());
 
+            $message = 'Contract has been successfully unposted and reverted to draft.';
+            if (! empty($cleanup['removed'])) {
+                $message .= ' '.count($cleanup['removed']).' Job Schedule yang belum dimulai ikut dihapus.';
+            }
+            if (! empty($cleanup['kept'])) {
+                $message .= ' '.count($cleanup['kept']).' Job Schedule yang sudah berjalan tidak diubah.';
+            }
+
             return response()->json([
                 'status' => 'success',
-                'message' => 'Contract has been successfully unposted and reverted to draft.',
+                'message' => $message,
             ]);
 
         } catch (\Exception $e) {

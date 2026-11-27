@@ -1144,7 +1144,18 @@ class JobAdviceController extends Controller
                 ], 422);
             }
 
-            $count = JobAdvice::whereIn('id', $request->ids)->delete();
+            // QA 27 Nov 2026: hapus massal dulu tidak ikut menghapus Job Schedule JA-nya (destroy()
+            // sudah). Job yang belum dimulai ikut dihapus; yang sudah berjalan dibiarkan.
+            $count = DB::transaction(function () use ($jobAdvices) {
+                $cleaner = app(\App\Services\Operational\OrphanedJobScheduleCleaner::class);
+                foreach ($jobAdvices as $jobAdvice) {
+                    \App\Models\JobSchedule::where('job_advice_id', $jobAdvice->id)->get()
+                        ->filter(fn ($jobSchedule) => $cleaner->isNotStarted($jobSchedule))
+                        ->each(fn ($jobSchedule) => $cleaner->removeJob($jobSchedule, "Job Advice {$jobAdvice->job_advice_number} dihapus"));
+                }
+
+                return JobAdvice::whereIn('id', $jobAdvices->pluck('id'))->delete();
+            });
             
             return response()->json([
                 'success' => true,

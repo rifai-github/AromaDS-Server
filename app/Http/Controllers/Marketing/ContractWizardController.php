@@ -986,6 +986,15 @@ class ContractWizardController extends Controller
                     "Auto-cancelled because quotation turned into Contract: {$contractNumber}"
                 );
                 \Log::info("Auto-cancelled {$cancelledRemoveFree} Remove Free job(s) for Quotation: {$quotation->quotation_number}");
+                // QA 27 Nov 2026 (ADS-IF/26-11/0002 Ruang-4): job lanjutan trial yang belum selesai untuk
+                // ruangan yang kini masuk kontrak tidak terpakai lagi (dipasang lewat JA Install kontrak).
+                $removedTrialFollowUps = app(\App\Services\Operational\OrphanedJobScheduleCleaner::class)->removeTrialFollowUpsTakenOverByContract(
+                    $contract,
+                    "Ruangan trial masuk Contract {$contractNumber}"
+                );
+                if (! empty($removedTrialFollowUps)) {
+                    \Log::info("Removed trial follow-up job(s) taken over by Contract {$contractNumber}: ".implode(', ', $removedTrialFollowUps));
+                }
             } catch (\Exception $e) {
                 \Log::error("Error auto-cancelling remove free jobs in Wizard: " . $e->getMessage());
                 // Jangan gagalkan pembuatan kontrak jika ini gagal
