@@ -359,6 +359,8 @@ class CatalystClientFindings27NovImportTest extends TestCase
             ['PayCode' => 'PMMKB', 'PayName' => 'BANK MANDIRI 1170005801899', 'FgMode' => 'B', 'Bank' => 'BM001', 'NoRekening' => '117-00-0580189-9', 'NamaRekening' => 'PT PINK SERVICES INDONESIA', 'BankBranch' => 'KCP JAKARTA TAMAN KEBON JERUK', 'BankAddr' => null, 'BankPhone' => null, 'BankFax' => null, 'FgActive' => 'Y'],
             // Kolom Bank kosong -> bank dari PayName.
             ['PayCode' => 'PMBCA', 'PayName' => 'BCA 3727777566', 'FgMode' => 'B', 'Bank' => '', 'NoRekening' => '372-7777-566', 'NamaRekening' => 'PINK SERVICES INDONESIA', 'BankBranch' => 'KCP KEDOYA PERMAI', 'BankAddr' => null, 'BankPhone' => null, 'BankFax' => null, 'FgActive' => 'Y'],
+            // NoRekening kosong, nomor di ujung PayName (pola PayType 00001 "BANK DANAMON 0066585829").
+            ['PayCode' => '00001', 'PayName' => 'BANK MANDIRI 0066585829', 'FgMode' => 'B', 'Bank' => 'BM001', 'NoRekening' => '', 'NamaRekening' => 'PT PINK SERVICES INDONESIA', 'BankBranch' => 'JAKARTA PURI KENCANA', 'BankAddr' => null, 'BankPhone' => null, 'BankFax' => null, 'FgActive' => 'Y'],
             // Bukan rekening bank.
             ['PayCode' => 'KAS01', 'PayName' => 'KAS HEAD OFFICE', 'FgMode' => 'B', 'Bank' => '', 'NoRekening' => '', 'NamaRekening' => '', 'BankBranch' => '', 'BankAddr' => null, 'BankPhone' => null, 'BankFax' => null, 'FgActive' => 'Y'],
             ['PayCode' => 'KBDG', 'PayName' => 'KAS BANDUNG', 'FgMode' => 'K', 'Bank' => '', 'NoRekening' => '', 'NamaRekening' => '', 'BankBranch' => '', 'BankAddr' => null, 'BankPhone' => null, 'BankFax' => null, 'FgActive' => 'Y'],
@@ -373,7 +375,8 @@ class CatalystClientFindings27NovImportTest extends TestCase
 
         $result = $this->importer()->call('bank_payments');
 
-        $this->assertSame(3, $result['stats']['inserted']);
+        $this->assertSame(4, $result['stats']['inserted']);
+        $this->assertTrue(DB::table('bank_payments')->where('account_number', '0066585829')->exists(), 'Nomor rekening dari PayName.');
 
         $va = DB::table('bank_payments')->where('account_number', '372.7777.116')->first();
         $this->assertNotNull($va);
@@ -389,7 +392,7 @@ class CatalystClientFindings27NovImportTest extends TestCase
 
         // Rerun tidak membuat dobel.
         $this->importer()->call('bank_payments');
-        $this->assertSame(3, DB::table('bank_payments')->count());
+        $this->assertSame(4, DB::table('bank_payments')->count());
     }
 
     public function test_bank_account_number_is_normalised(): void

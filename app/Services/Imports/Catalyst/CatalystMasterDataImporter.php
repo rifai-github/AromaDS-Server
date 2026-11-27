@@ -396,7 +396,9 @@ class CatalystMasterDataImporter
                 return $this->skippedRow('PayType "' . $payCode . '" tidak menunjuk bank yang ada di master bank.', $payCode);
             }
 
-            $accountNumber = $this->normalizeBankAccountNumber($row['NoRekening'] ?? null);
+            // NoRekening kosong tapi nomornya ada di ujung PayName ("BANK DANAMON 0066585829").
+            $accountNumber = $this->normalizeBankAccountNumber($row['NoRekening'] ?? null)
+                ?: (preg_match('/(\d[\d.\-]{5,})\s*$/', (string) $this->cleanString($row['PayName'] ?? null), $nameMatch) ? $nameMatch[1] : null);
             if (!$accountNumber) {
                 return $this->skippedRow('PayType "' . $payCode . '" tidak punya nomor rekening.', $payCode);
             }
