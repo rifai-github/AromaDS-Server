@@ -195,6 +195,10 @@ class CatalystMasterDataImporter
     private ?array $sourceBillingGroupsByCode = null;
     /** @var array<string, array<string, mixed>>|null cache sourceContractHeadersByNumber() */
     private ?array $sourceContractHeadersByNumber = null;
+    /** @var array{room: array<string, string>, floor: array<string, string>}|null MsRoom / MsFloor */
+    private ?array $catalystRoomAndFloorNames = null;
+    /** @var array<string, array<string, string>> master option -> [lower(nama) => option_name] */
+    private array $masterOptionSpellingCache = [];
     /** @var array<string, string>|null nomor SQ -> price_basis dari kontraknya */
     private ?array $sourceQuotationPriceBasisCache = null;
     /** @var array<string, true>|null cache eligibleContractNumbers() */
@@ -3517,9 +3521,18 @@ class CatalystMasterDataImporter
             return null;
         }
 
+        // Pak Hengky 27 Nov 2026: kolom Room Type & Floor di tab Room & Rental salah - room_type
+        // dulu selalu 'service' dan floor diisi KODE lantai ("010"). Sekarang nama dari MsRoom /
+        // MsFloor, memakai ejaan detail Master Option "Room Type" / "Floor" (dropdown survey &
+        // master room menyimpan option_name).
+        $roomType = $this->catalystRoomTypeName($roomCode);
+        $floorName = $this->catalystFloorName($floorCode) ?: $this->cleanString($floorCode);
+
         $sourceKey = $this->makeKey([$buildingId, $floorCode, $roomCode, $roomName]);
         $mappedId = $this->findMappedTargetId('CATALYST_ROOM', $sourceKey, 'master_rooms');
         if ($mappedId) {
+            $this->repairImportedRoomLabels((int) $mappedId, $roomType, $floorName, $floorCode);
+
             return $mappedId;
         }
 
@@ -3528,13 +3541,15 @@ class CatalystMasterDataImporter
             ->where('room_name', $roomName);
 
         if (in_array('room_floor', $this->columns('master_rooms'), true) && $this->cleanString($floorCode)) {
-            $query->where(function ($sub) use ($floorCode) {
-                $sub->where('room_floor', $floorCode)->orWhereNull('room_floor');
+            $floorValues = array_values(array_unique(array_filter([$this->cleanString($floorCode), $floorName])));
+            $query->where(function ($sub) use ($floorValues) {
+                $sub->whereIn('room_floor', $floorValues)->orWhereNull('room_floor');
             });
         }
 
         $existing = $query->orderBy('id')->first();
         if ($existing) {
+            $this->repairImportedRoomLabels((int) $existing->id, $roomType, $floorName, $floorCode);
             $this->rememberMap('CATALYST_ROOM', $sourceKey, 'master_rooms', (int) $existing->id, [
                 'building_id' => $buildingId,
                 'room_name' => $roomName,
@@ -3549,9 +3564,9 @@ class CatalystMasterDataImporter
             'customer_id' => $customerId,
             'room_code' => $this->cleanString($roomCode) ?: $this->fallbackRoomCode($roomName, $floorCode),
             'room_name' => $roomName,
-            'room_type' => 'service',
-            'floor' => $this->cleanString($floorCode),
-            'room_floor' => $this->cleanString($floorCode),
+            'room_type' => $roomType,
+            'floor' => $floorName,
+            'room_floor' => $floorName,
             'room_remark' => $this->buildSourceDescription([
                 'SourceRoomCode' => $roomCode,
             ]),
@@ -3578,6 +3593,102 @@ class CatalystMasterDataImporter
         ]);
 
         return $id > 0 ? $id : null;
+    }
+
+    /** MsRoom.RoomName untuk RoomCode, dieja seperti detail Master Option "Room Type". */
+    protected function catalystRoomTypeName(?string $roomCode): ?string
+    {
+        $this->catalystRoomAndFloorNames ??= $this->loadCatalystRoomAndFloorNames();
+        $name = $this->catalystRoomAndFloorNames['room'][mb_strtoupper((string) $this->cleanString($roomCode))] ?? null;
+
+        return $name ? $this->masterOptionSpelling('Room Type', $name) : null;
+    }
+
+    /** MsFloor.FloorName untuk FloorCode, dieja seperti detail Master Option "Floor". */
+    protected function catalystFloorName(?string $floorCode): ?string
+    {
+        $this->catalystRoomAndFloorNames ??= $this->loadCatalystRoomAndFloorNames();
+        $name = $this->catalystRoomAndFloorNames['floor'][mb_strtoupper((string) $this->cleanString($floorCode))] ?? null;
+
+        return $name ? $this->masterOptionSpelling('Floor', $name) : null;
+    }
+
+    /**
+     * @return array{room: array<string, string>, floor: array<string, string>}
+     */
+    protected function loadCatalystRoomAndFloorNames(): array
+    {
+        $names = ['room' => [], 'floor' => []];
+        foreach (['room' => ['MsRoom', 'RoomCode', 'RoomName'], 'floor' => ['MsFloor', 'FloorCode', 'FloorName']] as $kind => [$table, $codeColumn, $nameColumn]) {
+            foreach ($this->optionalSourceRows('rooms', $table) as $row) {
+                $code = $this->cleanString($row[$codeColumn] ?? null);
+                $name = $this->cleanString(preg_replace('/\s+/u', ' ', (string) ($row[$nameColumn] ?? '')));
+                // Kode "-" / "000" bernama "-" = placeholder Catalyst, bukan ruangan/lantai.
+                if ($code === null || $name === null || trim($name, " -") === '') {
+                    continue;
+                }
+
+                $names[$kind][mb_strtoupper($code)] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    /** Ejaan detail Master Option yang namanya sama (tak peka huruf); kalau tidak ada, nama Catalyst. */
+    protected function masterOptionSpelling(string $masterOption, string $name): string
+    {
+        if (!isset($this->masterOptionSpellingCache[$masterOption])) {
+            $this->masterOptionSpellingCache[$masterOption] = [];
+            $masterId = Schema::hasTable('option_details') ? $this->masterOptionWriter()->masterOptionId($masterOption) : null;
+            if ($masterId) {
+                $query = DB::table('option_details')->where('master_option_id', $masterId);
+                if (in_array('deleted_at', $this->columns('option_details'), true)) {
+                    $query->whereNull('deleted_at');
+                }
+                foreach ($query->orderBy('id')->pluck('option_name') as $optionName) {
+                    $key = mb_strtolower(trim(preg_replace('/\s+/u', ' ', (string) $optionName)));
+                    $this->masterOptionSpellingCache[$masterOption][$key] ??= trim((string) $optionName);
+                }
+            }
+        }
+
+        return $this->masterOptionSpellingCache[$masterOption][mb_strtolower($name)] ?? $name;
+    }
+
+    /**
+     * Ruangan hasil import lama masih berisi room_type 'service' dan kode lantai; dibetulkan saat
+     * ditemui lagi. Isian manual (room_type lain / lantai lain) tidak disentuh.
+     */
+    protected function repairImportedRoomLabels(int $roomId, ?string $roomType, ?string $floorName, ?string $floorCode): void
+    {
+        if (!$this->apply || $roomId < 1) {
+            return;
+        }
+
+        $room = DB::table('master_rooms')->where('id', $roomId)->first();
+        if (!$room) {
+            return;
+        }
+
+        $update = [];
+        if ($roomType && in_array(Str::lower((string) ($room->room_type ?? '')), ['', 'service'], true)) {
+            $update['room_type'] = $roomType;
+        }
+
+        $floorCode = $this->cleanString($floorCode);
+        if ($floorName && $floorCode && $floorName !== $floorCode) {
+            foreach (['room_floor', 'floor'] as $column) {
+                $current = $this->cleanString($room->{$column} ?? null);
+                if ($current === null || $current === $floorCode) {
+                    $update[$column] = $floorName;
+                }
+            }
+        }
+
+        if ($update !== []) {
+            DB::table('master_rooms')->where('id', $roomId)->update($this->filterPayload('master_rooms', $update + ['updated_at' => now()]));
+        }
     }
 
     protected function fallbackRoomCode(?string $roomName, ?string $floorCode = null): string
@@ -4398,7 +4509,7 @@ class CatalystMasterDataImporter
                 'room_name' => $roomName,
             ], [
                 'room_id' => $roomId,
-                'room_type' => 'service',
+                'room_type' => $this->catalystRoomTypeName($this->cleanString($row['RoomCode'] ?? null)) ?? 'service',
                 'quantity_needed' => 1,
                 'room_area' => max(0, (float) ($row['Panjang'] ?? 0) * (float) ($row['Lebar'] ?? 0)),
                 'specifications' => json_encode([

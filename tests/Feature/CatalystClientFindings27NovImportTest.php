@@ -735,4 +735,118 @@ class CatalystClientFindings27NovImportTest extends TestCase
         $this->assertGreaterThan(array_search('contracts', $order, true), array_search('contract_signings', $order, true));
         $this->assertGreaterThan(array_search('customer_contacts', $order, true), array_search('contract_signings', $order, true));
     }
+
+    // ── 6. Room Type & Floor ────────────────────────────────────────────────
+
+    private function createRoomTables(): void
+    {
+        $this->create('master_rooms', function (Blueprint $table) {
+            $table->id();
+            $table->string('room_code');
+            $table->string('room_name');
+            $table->unsignedBigInteger('building_id')->nullable();
+            $table->unsignedBigInteger('customer_id')->nullable();
+            $table->string('floor')->nullable();
+            $table->string('room_type')->nullable();
+            $table->string('room_floor', 50)->nullable();
+            $table->integer('room_qty')->nullable();
+            $table->decimal('room_length', 8, 2)->nullable();
+            $table->decimal('room_width', 8, 2)->nullable();
+            $table->decimal('room_height', 8, 2)->nullable();
+            $table->text('room_remark')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+        $this->create('MsRoom', function (Blueprint $table) {
+            $table->string('RoomCode');
+            $table->string('RoomName');
+            $table->string('FgActive')->nullable();
+        });
+        $this->create('MsFloor', function (Blueprint $table) {
+            $table->string('FloorCode');
+            $table->string('FloorName');
+            $table->string('FgActive')->nullable();
+        });
+        $this->create('master_options', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+        $this->create('option_details', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('master_option_id');
+            $table->string('option_name');
+            $table->timestamps();
+            $table->softDeletes();
+        });
+
+        // Isi asli MsRoom / MsFloor Catalyst + detail Master Option prod.
+        DB::table('MsRoom')->insert([
+            ['RoomCode' => '-', 'RoomName' => '-', 'FgActive' => 'N'],
+            ['RoomCode' => '005', 'RoomName' => 'LOBBY', 'FgActive' => 'Y'],
+            ['RoomCode' => '018', 'RoomName' => 'ROOM', 'FgActive' => 'Y'],
+        ]);
+        DB::table('MsFloor')->insert([
+            ['FloorCode' => '000', 'FloorName' => '-', 'FgActive' => 'N'],
+            ['FloorCode' => '004', 'FloorName' => 'GROUND', 'FgActive' => 'Y'],
+            ['FloorCode' => '010', 'FloorName' => 'LANTAI 1', 'FgActive' => 'Y'],
+        ]);
+        DB::table('master_options')->insert([['id' => 1, 'name' => 'Room Type'], ['id' => 2, 'name' => 'Floor']]);
+        DB::table('option_details')->insert([
+            ['master_option_id' => 1, 'option_name' => 'Lobby'],
+            ['master_option_id' => 1, 'option_name' => 'Room'],
+            ['master_option_id' => 2, 'option_name' => 'Ground'],
+        ]);
+    }
+
+    public function test_imported_room_gets_room_type_and_floor_names(): void
+    {
+        $this->createImportMaps();
+        $this->createRoomTables();
+        $importer = $this->importer();
+
+        $servicesArea = $importer->call('ensureMasterRoomId', 15956, 11886, 'Services Area 1', '010', '018');
+        $lobby = $importer->call('ensureMasterRoomId', 15956, 11886, 'Lobby - ADS', '004', '005');
+        $unknown = $importer->call('ensureMasterRoomId', 15956, 11886, 'Gudang', '000', '-');
+
+        $room = DB::table('master_rooms')->find($servicesArea);
+        $this->assertSame('Room', $room->room_type, 'Ejaan Master Option "Room Type" dipakai.');
+        $this->assertSame('LANTAI 1', $room->room_floor, 'Nama lantai, bukan kode "010".');
+        $this->assertSame('LANTAI 1', $room->floor);
+
+        $room = DB::table('master_rooms')->find($lobby);
+        $this->assertSame('Lobby', $room->room_type);
+        $this->assertSame('Ground', $room->room_floor);
+
+        $room = DB::table('master_rooms')->find($unknown);
+        $this->assertNull($room->room_type, 'Placeholder "-" bukan room type; dulu selalu "service".');
+        $this->assertSame('000', $room->room_floor);
+    }
+
+    public function test_rooms_from_an_earlier_import_are_relabelled_but_manual_values_kept(): void
+    {
+        $this->createImportMaps();
+        $this->createRoomTables();
+        DB::table('master_rooms')->insert([
+            ['id' => 27563, 'room_code' => '018', 'room_name' => 'Services Area 1', 'building_id' => 15956, 'room_type' => 'service', 'floor' => '010', 'room_floor' => '010'],
+            ['id' => 27564, 'room_code' => '018', 'room_name' => 'Services Area 2', 'building_id' => 15956, 'room_type' => 'Meeting Room', 'floor' => 'Lantai Dua', 'room_floor' => 'Lantai Dua'],
+        ]);
+        $this->map('CATALYST_ROOM', '15956||010||018||Services Area 1', 'master_rooms', 27563);
+        $this->map('CATALYST_ROOM', '15956||010||018||Services Area 2', 'master_rooms', 27564);
+
+        $importer = $this->importer();
+        $this->assertSame(27563, (int) $importer->call('ensureMasterRoomId', 15956, 11886, 'Services Area 1', '010', '018'));
+        $importer->call('ensureMasterRoomId', 15956, 11886, 'Services Area 2', '010', '018');
+
+        $fixed = DB::table('master_rooms')->find(27563);
+        $this->assertSame('Room', $fixed->room_type);
+        $this->assertSame('LANTAI 1', $fixed->room_floor);
+
+        $manual = DB::table('master_rooms')->find(27564);
+        $this->assertSame('Meeting Room', $manual->room_type);
+        $this->assertSame('Lantai Dua', $manual->room_floor);
+    }
 }
